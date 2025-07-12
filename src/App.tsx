@@ -4,21 +4,23 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import { SessionProvider } from './context/SessionContext';
+import ClientDetailPage from './pages/ClientDetailPage';
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Public Route: Anyone can see this page */}
-        <Route path="/login" element={<AuthPage />} />
+    <SessionProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<AuthPage />} />
 
-        {/* Protected Route: Only logged-in users can see this */}
-        <Route path="/" element={<ProtectedRoute />}>
-          <Route path="/" element={<DashboardPage />} />
-          {/* You can add more protected routes here, e.g., <Route path="/settings" element={<SettingsPage />} /> */}
-        </Route>
-      </Routes>
-    </BrowserRouter>
+          <Route path="/" element={<ProtectedRoute />}>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/client/:clientId" element={<ClientDetailPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </SessionProvider>
   );
 }
 

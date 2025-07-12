@@ -1,120 +1,128 @@
 // src/pages/DashboardPage.tsx
 
-import { useState, useEffect } from 'react';
-import type { FormEvent } from 'react';
-import { supabase } from '../supabaseClient';
-import type { User } from '@supabase/supabase-js';
+import { useState, useEffect, type FormEvent } from 'react';
+import { supabase } from '../supabaseClient'; // <-- THIS IMPORT IS NEEDED
+import BlueprintsManager from '../components/BlueprintsManager';
+import { useSession } from '../context/SessionContext';
+import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
-// Define the shape of our Client data
+// Import the new Shadcn components
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+
 interface Client {
   id: string;
   name: string;
-  created_at: string;
 }
 
 export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
+  const { user, profile } = useSession();
   const [clients, setClients] = useState<Client[]>([]);
   const [newClientName, setNewClientName] = useState('');
-  const [user, setUser] = useState<User | null>(null);
 
-  // Fetch user session and clients on component load
+  // These functions all use the 'supabase' client
   useEffect(() => {
-    const getInitialData = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setUser(session.user);
-        fetchClients();
-      }
-      setLoading(false);
-    };
-    getInitialData();
-  }, []);
+    if (profile) fetchClients();
+  }, [profile]);
 
-  // READ: Function to fetch clients from the database
   const fetchClients = async () => {
-    // For this MVP, we assume the user's organization_id is hardcoded or fetched elsewhere.
-    // A real app would get this from the user's profile.
-    const { data, error } = await supabase.from('clients').select('*');
-    if (error) {
-      console.error('Error fetching clients:', error);
-    } else if (data) {
-      setClients(data);
-    }
+    if (!profile) return;
+    const { data, error } = await supabase.from('clients').select('id, name').eq('organization_id', profile.organization_id);
+    if (error) toast.error(error.message);
+    else if (data) setClients(data);
   };
 
-  // CREATE: Function to add a new client
   const handleAddClient = async (event: FormEvent) => {
     event.preventDefault();
-    if (!newClientName.trim()) return;
-
-    // We'd need to get the user's actual organization_id here.
-    // For now, let's pretend it's a placeholder.
-    const placeholderOrgId = '00000000-0000-0000-0000-000000000000'; // Replace with real logic later
-
+    if (!newClientName.trim() || !profile) return;
     const { data, error } = await supabase
       .from('clients')
-      .insert([{ name: newClientName, organization_id: placeholderOrgId }])
-      .select();
-
+      .insert([{ name: newClientName, organization_id: profile.organization_id }])
+      .select('id, name')
+      .single();
     if (error) {
-      alert(error.message);
+      toast.error(error.message);
     } else if (data) {
-      setClients([...clients, data[0]]);
+      setClients([...clients, data]);
       setNewClientName('');
+      toast.success('Client added!');
     }
   };
 
-  // DELETE: Function to remove a client
   const handleDeleteClient = async (clientId: string) => {
     if (window.confirm('Are you sure you want to delete this client?')) {
       const { error } = await supabase.from('clients').delete().eq('id', clientId);
       if (error) {
-        alert(error.message);
+        toast.error(error.message);
       } else {
         setClients(clients.filter((client) => client.id !== clientId));
+        toast.success('Client deleted.');
       }
     }
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    // The router will redirect the user to the login page.
+    toast.success('Logged out.');
   };
 
-  if (loading) return <p>Loading...</p>;
-  if (!user) return <p>No user session found. Please log in.</p>;
+  if (!profile) return <div className="flex h-screen items-center justify-center">Loading session...</div>;
 
   return (
-    <div style={{ maxWidth: '800px', margin: '48px auto' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Dashboard</h2>
-        <div>
-          <span>{user.email}</span>
-          <button onClick={handleLogout} style={{ marginLeft: '1rem' }}>Logout</button>
+    <div className="container mx-auto p-4 sm:p-6 md:p-8">
+      {/* Page Header */}
+      <header className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-muted-foreground">{user?.email}</span>
+          <Button variant="outline" onClick={handleLogout}>Logout</Button>
         </div>
       </header>
-      <hr />
-      <main>
-        <h3>Manage Clients</h3>
-        <form onSubmit={handleAddClient}>
-          <input
-            type="text"
-            placeholder="New client name"
-            value={newClientName}
-            onChange={(e) => setNewClientName(e.target.value)}
-          />
-          <button type="submit">Add Client</button>
-        </form>
 
-        <ul style={{ listStyle: 'none', padding: 0 }}>
-          {clients.map((client) => (
-            <li key={client.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', borderBottom: '1px solid #eee' }}>
-              <span>{client.name}</span>
-              <button onClick={() => handleDeleteClient(client.id)}>Delete</button>
-            </li>
-          ))}
-        </ul>
+      <main className="grid gap-8">
+        {/* Manage Clients Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Manage Clients</CardTitle>
+            <CardDescription>Add, view, or remove client projects.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleAddClient} className="flex items-center gap-2 mb-4 max-w-sm">
+              <Input
+                type="text"
+                placeholder="New client name"
+                value={newClientName}
+                onChange={(e) => setNewClientName(e.target.value)}
+              />
+              <Button type="submit">Add Client</Button>
+            </form>
+            <div className="border rounded-md">
+              <ul className="divide-y">
+                {clients.map((client) => (
+                  <li key={client.id} className="flex items-center justify-between p-3">
+                    <Link to={`/client/${client.id}`} className="font-medium text-primary hover:underline">
+                      {client.name}
+                    </Link>
+                    <Button variant="ghost" size="sm" onClick={() => handleDeleteClient(client.id)}>Delete</Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Manage Blueprints Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Manage Blueprints</CardTitle>
+            <CardDescription>Create or update your master workflow templates.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BlueprintsManager />
+          </CardContent>
+        </Card>
       </main>
     </div>
   );
