@@ -90,20 +90,31 @@ export default function ClientDetailPage() {
 
   const handleDeploy = async (blueprintId: string) => {
     if (!clientId || !instance) {
-      toast.error('Please save n8n connection details before deploying.');
+      toast.error('Client details or n8n instance connection is missing.');
       return;
     }
     const blueprintToDeploy = blueprints.find(bp => bp.id === blueprintId);
     if (!window.confirm(`Are you sure you want to deploy the "${blueprintToDeploy?.name}" blueprint to ${client?.name}?`)) return;
-
+  
     setDeploying(blueprintId);
     try {
-      const { data, error } = await supabase.functions.invoke('deploy-blueprint', { body: { clientId, blueprintId } });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("You must be logged in.");
+  
+      const { data, error } = await supabase.functions.invoke('deploy-blueprint', {
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+        body: { 
+          blueprintId, // Pass the blueprintId
+          clientId,    // Pass the clientId from the page's params
+        },
+      });
+  
       if (error) throw error;
+      
       toast.success(data.message);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
-      toast.error(`Deployment failed: ${errorMessage}`);
+  
+    } catch (error: any) {
+      toast.error(`Deployment failed: ${error.message}`);
     } finally {
       setDeploying(null);
     }

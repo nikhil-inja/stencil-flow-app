@@ -76,7 +76,11 @@ export default function DashboardPage() {
       <header className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-muted-foreground">{user?.email}</span>
+            <span className="text-sm text-muted-foreground">{user?.email}</span>
+
+            <Button asChild variant="secondary" size="sm">
+                <Link to="/settings/team">Team Settings</Link>
+            </Button>
           <Button variant="outline" onClick={handleLogout}>Logout</Button>
         </div>
       </header>
@@ -118,6 +122,9 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>Manage Blueprints</CardTitle>
             <CardDescription>Create or update your master workflow templates.</CardDescription>
+            <Button asChild variant="secondary" size="sm">
+                <Link to="/import/n8n">Import from n8n</Link>
+            </Button>
           </CardHeader>
           <CardContent>
             <BlueprintsManager />

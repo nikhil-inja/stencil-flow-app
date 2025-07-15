@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 
 // Import Shadcn Components
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const navigate = useNavigate(); 
 
   // Handles Email & Password Login
   const handleEmailLogin = async (event: FormEvent) => {
@@ -23,8 +25,10 @@ export default function AuthPage() {
 
     if (error) {
       toast.error(error.message);
+    } else {
+      toast.success("Logged in successfully!");
+      navigate('/'); // <-- 3. REDIRECT TO DASHBOARD ON SUCCESS
     }
-    // On success, the router will redirect automatically.
     setLoading(false);
   };
 
@@ -35,7 +39,7 @@ export default function AuthPage() {
       provider: 'github',
       options: {
         redirectTo: window.location.origin,
-        scopes: 'repo', // <-- This is the most important line
+        scopes: 'repo',
       },
     });
     if (error) {
@@ -52,7 +56,7 @@ export default function AuthPage() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success('Check your email for the verification link!');
+      toast.success('Check your email to verify your new account!');
     }
     setLoading(false);
   };
@@ -72,7 +76,7 @@ export default function AuthPage() {
               <Button variant="outline" className="w-full" onClick={signInWithGitHub} disabled={loading}>
                 Login with GitHub
               </Button>
-              <div className="relative">
+              <div className="relative my-2">
                 <div className="absolute inset-0 flex items-center">
                   <span className="w-full border-t" />
                 </div>
@@ -85,40 +89,20 @@ export default function AuthPage() {
               <form onSubmit={handleEmailLogin} className="grid gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="m@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={loading}
-                  />
+                  <Input id="email" type="email" placeholder="m@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={loading} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="password">Password</Label>
-                  <Input 
-                    id="password" 
-                    type="password" 
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required 
-                    disabled={loading}
-                  />
+                  <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required disabled={loading} />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? 'Loading...' : 'Login with Email'}
+                  {loading ? 'Logging in...' : 'Login with Email'}
                 </Button>
               </form>
             </div>
             <div className="mt-4 text-center text-sm">
               Don&apos;t have an account?{" "}
-              {/* This could link to a separate signup page or use a modal */}
-              <button
-                onClick={(e: any) => handleSignUp(e)} // We reuse the form fields for signup
-                className="underline"
-                disabled={loading}
-              >
+              <button onClick={(e: any) => handleSignUp(e)} className="underline" disabled={loading}>
                 Sign up
               </button>
             </div>
@@ -127,7 +111,6 @@ export default function AuthPage() {
       </div>
       <div className="hidden bg-muted lg:block">
         {/* You can add an image or branding here later */}
-        <img src="/placeholder.svg" alt="Image" className="h-full w-full object-cover dark:brightness-[0.2] dark:grayscale" />
       </div>
     </div>
   );

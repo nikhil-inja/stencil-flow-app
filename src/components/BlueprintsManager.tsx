@@ -4,6 +4,7 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { supabase } from '../supabaseClient';
 import { useSession } from '../context/SessionContext';
 import toast from 'react-hot-toast';
+import { Link } from 'react-router-dom'; 
 
 // Import the Shadcn components
 import { Button } from "@/components/ui/button";
@@ -81,7 +82,8 @@ export default function BlueprintsManager() {
         body: { 
           name, 
           description,
-          githubToken // <-- Pass the token directly
+          githubToken,
+          workflowJson
         },
       });
   
@@ -142,14 +144,22 @@ export default function BlueprintsManager() {
         <ul className="divide-y">
           {blueprints.map((bp) => (
             <li key={bp.id} className="flex items-center justify-between p-3">
-              <div>
-                <p className="font-medium">{bp.name}</p>
-                <p className="text-sm text-muted-foreground">{bp.description || 'No description.'}</p>
-              </div>
+            <div>
+              <p className="font-medium">{bp.name}</p>
+              <p className="text-sm text-muted-foreground">{bp.description || 'No description.'}</p>
+            </div>
+          
+            {/* START OF CHANGES */}
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link to={`/blueprint/${bp.id}/edit`}>Edit</Link>
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => handleDeleteBlueprint(bp.id)}>
                 Delete
               </Button>
-            </li>
+            </div>
+            {/* END OF CHANGES */}
+          </li>
           ))}
         </ul>
       </div>
