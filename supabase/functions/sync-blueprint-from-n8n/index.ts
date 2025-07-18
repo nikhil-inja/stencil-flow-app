@@ -13,7 +13,9 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
   try {
+    // 1. Authenticate user
     const supabaseUserClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -22,16 +24,28 @@ serve(async (req) => {
     const { data: { user } } = await supabaseUserClient.auth.getUser();
     if (!user) throw new Error("User not authenticated.");
 
+    // 2. Get blueprintId and githubToken from request body
     const { blueprintId, githubToken } = await req.json();
     if (!blueprintId || !githubToken) {
       throw new Error("Missing blueprintId or githubToken.");
     }
     
-    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    
-    const { data: blueprintData } = await supabaseAdmin.from('blueprints').select(`git_repository, workflow_json, organization:organizations (master_n8n_url, master_n8n_api_key)`).eq('id', blueprintId).single();
+    // 3. Get blueprint and organization details
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+    const { data: blueprintData } = await supabaseAdmin
+      .from('blueprints')
+      .select(`
+        git_repository,
+        workflow_json,
+        organization:organizations (master_n8n_url, master_n8n_api_key)
+      `)
+      .eq('id', blueprintId)
+      .single();
+
     if (!blueprintData) throw new Error("Blueprint not found.");
-    
     const { git_repository, workflow_json, organization } = blueprintData as any;
     if (!organization?.master_n8n_url || !organization?.master_n8n_api_key) {
       throw new Error("Master n8n credentials are not configured in settings.");
@@ -40,16 +54,22 @@ serve(async (req) => {
     const n8nWorkflowId = (workflow_json as any)?.id;
     if (!n8nWorkflowId) throw new Error("Could not find source n8n workflow ID in blueprint.");
 
+    // 4. Fetch the LATEST version from the user's master n8n instance
     const cleanedUrl = organization.master_n8n_url.replace(/\/$/, "");
     const targetUrl = `${cleanedUrl}/api/v1/workflows/${n8nWorkflowId}`;
-    const n8nResponse = await fetch(targetUrl, { headers: { 'X-N8N-API-KEY': organization.master_n8n_api_key } });
+    const n8nResponse = await fetch(targetUrl, {
+      headers: { 'X-N8N-API-KEY': organization.master_n8n_api_key },
+    });
     if (!n8nResponse.ok) throw new Error("Could not fetch latest workflow from your n8n instance.");
     const newWorkflowJson = await n8nResponse.json();
 
+    // 5. Commit the updated workflow to the GitHub repository
     const repoPath = new URL(git_repository).pathname.substring(1);
     const filePath = `repos/${repoPath}/contents/workflow.json`;
 
-    const getFileResponse = await fetch(`https://api.github.com/${filePath}`, { headers: { 'Authorization': `token ${githubToken}` } });
+    const getFileResponse = await fetch(`https://api.github.com/${filePath}`, {
+      headers: { 'Authorization': `token ${githubToken}` },
+    });
     if (!getFileResponse.ok) throw new Error("Could not find workflow file in GitHub repo to update.");
     const fileData = await getFileResponse.json();
     const currentSha = fileData.sha;
@@ -58,18 +78,34 @@ serve(async (req) => {
 
     await fetch(`https://api.github.com/${filePath}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `token ${githubToken}`, 'Accept': 'application/vnd.github.v3+json' },
-      body: JSON.stringify({ message: 'Sync update from master n8n instance', content: contentEncoded, sha: currentSha }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `token ${githubToken}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+      body: JSON.stringify({
+        message: 'Sync update from master n8n instance',
+        content: contentEncoded,
+        sha: currentSha,
+      }),
     });
 
-    await supabaseAdmin.from('blueprints').update({ workflow_json: newWorkflowJson }).eq('id', blueprintId);
+    // 6. Update the workflow_json in our own database
+    await supabaseAdmin
+      .from('blueprints')
+      .update({ workflow_json: newWorkflowJson })
+      .eq('id', blueprintId);
 
     return new Response(JSON.stringify({ message: 'Blueprint synced successfully!' }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
     });
+
   } catch (error) {
+    console.error('Function error:', error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500,
     });
   }
 })

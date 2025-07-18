@@ -23,24 +23,18 @@ serve(async (req) => {
     const { data: { user } } = await supabaseUserClient.auth.getUser();
     if (!user) throw new Error("User not authenticated.");
 
-    // 2. Get blueprintId from request body
-    const { blueprintId } = await req.json();
-    if (!blueprintId) throw new Error("Blueprint ID is required.");
+    // 2. Get blueprintId and githubToken from request body
+    const { blueprintId, githubToken } = await req.json();
+    if (!blueprintId || !githubToken) {
+      throw new Error("Missing blueprintId or githubToken.");
+    }
 
-    // 3. Create admin client and read the GitHub token from the Vault
+    // 3. Get the blueprint's repo URL from our database
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
-
-    const secretName = `github_token_${user.id}`;
-    const { data: githubToken, error: vaultError } = await supabaseAdmin.rpc('vault.read_secret', { name: secretName });
-
-    if (vaultError || !githubToken) {
-      throw new Error("Could not retrieve GitHub token. Please connect your GitHub account in settings.");
-    }
-
-    // 4. Get the blueprint's repo URL from our database
+    
     const { data: blueprint } = await supabaseAdmin
       .from('blueprints')
       .select('git_repository')
@@ -51,7 +45,7 @@ serve(async (req) => {
     
     const repoPath = new URL(blueprint.git_repository).pathname.substring(1);
 
-    // 5. Call the GitHub API to get the list of commits
+    // 4. Call the GitHub API to get the list of commits
     const commitsResponse = await fetch(`https://api.github.com/repos/${repoPath}/commits`, {
       headers: {
         'Authorization': `token ${githubToken}`,
@@ -66,7 +60,7 @@ serve(async (req) => {
 
     const commitsData = await commitsResponse.json();
 
-    // 6. Simplify the data to send back only what we need
+    // 5. Simplify the data to send back
     const history = commitsData.map((c: any) => ({
       sha: c.sha,
       message: c.commit.message,

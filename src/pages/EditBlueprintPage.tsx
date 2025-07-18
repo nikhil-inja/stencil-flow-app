@@ -54,13 +54,12 @@ export default function EditBlueprintPage() {
       }
 
       const { data: { session } } = await supabase.auth.getSession();
-      // We only need the main access token now
-      if (session) { 
+      if (session?.provider_token) { 
         const { data: commitHistory, error: historyError } = await supabase.functions.invoke('get-commit-history', {
           headers: { 'Authorization': `Bearer ${session.access_token}` },
           body: { 
             blueprintId,
-            // The githubToken is no longer needed here
+            githubToken: session.provider_token // Ensure this is being sent
           }, 
         });
         if (historyError) throw historyError;
@@ -69,7 +68,7 @@ export default function EditBlueprintPage() {
     } catch (e: any) {
       toast.error(`Failed to load page data: ${e.message}`);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 
@@ -149,19 +148,21 @@ export default function EditBlueprintPage() {
     setIsSyncing(true);
     try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error("You must be logged in.");
+        if (!session?.provider_token) {
+          throw new Error("You must be logged in via GitHub to sync.");
+        }
 
         const { data, error } = await supabase.functions.invoke('sync-blueprint-from-n8n', {
             headers: { Authorization: `Bearer ${session.access_token}` },
             body: { 
                 blueprintId,
-                // The githubToken is no longer needed here
+                githubToken: session.provider_token // <-- This was missing
             },
         });
 
         if (error) throw error;
         toast.success(data.message);
-        fetchAllData();
+        fetchAllData(); // Refresh all page data to show the new version
     } catch (e: any) {
         toast.error(`Sync failed: ${e.message}`);
     } finally {
