@@ -1,16 +1,20 @@
 // src/pages/BlueprintsPage.tsx
 
-import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import BlueprintsManager from "@/components/BlueprintsManager";
 import { useEffect, useState } from "react";
 import { supabase } from "@/supabaseClient";
 import toast from "react-hot-toast";
+import BlueprintList from "@/components/BlueprintList";
+import CreateBlueprintForm from "@/components/CreateBlueprintForm";
+// import { PlusCircle } from "lucide-react";
 
 export default function BlueprintsPage() {
   const [isGitHubConnected, setIsGitHubConnected] = useState(false);
   const [loading, setLoading] = useState(true);
+  
+  // State to refresh the list after a new blueprint is created
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const checkGitHubConnection = async () => {
@@ -30,9 +34,9 @@ export default function BlueprintsPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'github',
       options: { 
-          scopes: 'repo',
-          queryParams: { prompt: 'consent' } 
-        },
+        scopes: 'repo',
+        queryParams: { prompt: 'consent' } 
+      },
     });
     if (error) toast.error(error.message);
   };
@@ -41,37 +45,42 @@ export default function BlueprintsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold tracking-tight">Blueprints</h1>
-        <Button asChild><Link to="/import/n8n">Import from n8n</Link></Button>
       </div>
       
+      {/* GitHub Connection Card remains the same */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>GitHub Connection</CardTitle>
-          <CardDescription>
+            <CardTitle>GitHub Connection</CardTitle>
+            <CardDescription>
             {isGitHubConnected 
-              ? "Your account is connected to GitHub. If you experience issues, you can refresh the connection."
-              : "Connect your GitHub account to enable version control for blueprints."
+                ? "Your account is connected to GitHub. If you experience issues, you can refresh the connection."
+                : "Connect your GitHub account to enable version control for blueprints."
             }
-          </CardDescription>
+            </CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? <p>Checking status...</p> : (
+            {loading ? <p>Checking status...</p> : (
             <Button onClick={handleConnectGitHub}>
                 {isGitHubConnected ? 'Refresh GitHub Connection' : 'Connect with GitHub'}
             </Button>
-          )}
+            )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Manage Blueprints</CardTitle>
-          <CardDescription>Create or update your master workflow templates.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <BlueprintsManager />
-        </CardContent>
-      </Card>
+      {/* New Side-by-Side Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* Left Column: Existing Blueprints */}
+        <div className="flex flex-col gap-4">
+            <BlueprintList key={refreshKey} />
+        </div>
+
+        {/* Right Column: Create New Blueprint */}
+        <div className="flex flex-col gap-4">
+            <CreateBlueprintForm onBlueprintCreated={() => setRefreshKey(prev => prev + 1)} />
+        </div>
+
+      </div>
     </div>
   );
 }

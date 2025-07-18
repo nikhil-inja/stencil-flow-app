@@ -15,7 +15,7 @@ import EditBlueprintPage from './pages/EditBlueprintPage';
 import TeamSettingsPage from './pages/TeamSettingsPage';
 import ImportPage from './pages/ImportPage';
 import AcceptInvitePage from './pages/AcceptInvitePage';
-import GitHubCallbackPage from './pages/GitHubCallbackPage';
+import GitHubCallbackPage from './pages/GithubCallbackPage';
 
 export default function App() {
   return (
