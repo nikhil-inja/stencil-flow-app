@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { supabase } from '@/supabaseClient';
 import { useSession } from '@/context/SessionContext';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 interface TeamMember {
     id: string;
@@ -31,6 +32,9 @@ export default function TeamSettingsPage() {
     const [masterUrl, setMasterUrl] = useState('');
     const [masterApiKey, setMasterApiKey] = useState('');
     const [isSavingMasterCreds, setIsSavingMasterCreds] = useState(false);
+
+    const [isGitHubConnected, setIsGitHubConnected] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(true);
     
     // NEW: Real state for the team members list
     const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -62,6 +66,16 @@ export default function TeamSettingsPage() {
         } else {
           setTeamMembers(membersData);
         }
+
+        try {
+            const { data, error } = await supabase.functions.invoke('check-github-connection');
+            if (error) throw error;
+            setIsGitHubConnected(data.isConnected);
+          } catch (e: any) {
+            toast.error("Failed to check GitHub connection: " + e.message);
+          } finally {
+            setIsConnecting(false);
+          }
       };
   
       loadPageData();
@@ -131,6 +145,31 @@ export default function TeamSettingsPage() {
     setIsSavingMasterCreds(false);
   };
 
+  const handleConnectGitHub = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        scopes: 'repo',
+        redirectTo: `${window.location.origin}/github-callback`,
+      },
+    });
+    if (error) toast.error(error.message);
+  };
+
+  const handleDisconnectGitHub = async () => {
+    setIsConnecting(true);
+    try {
+        const { error } = await supabase.functions.invoke('disconnect-github');
+        if (error) throw error;
+        toast.success("GitHub account disconnected.");
+        setIsGitHubConnected(false);
+    } catch(e: any) {
+        toast.error("Failed to disconnect GitHub: " + e.message);
+    } finally {
+        setIsConnecting(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 sm:p-6 md:p-8">
       <header className="mb-8">
@@ -141,6 +180,40 @@ export default function TeamSettingsPage() {
       </header>
 
       <main className="grid gap-8">
+      <Card>
+          <CardHeader>
+            <CardTitle>GitHub Connection</CardTitle>
+            <CardDescription>Connect your GitHub account to enable version control for blueprints.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isConnecting ? <p>Checking status...</p> : (
+              isGitHubConnected ? (
+                <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-green-600">✓ GitHub Account Connected</p>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="destructive">Disconnect</Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Disconnecting your GitHub account will prevent you from creating or updating blueprints. You can reconnect at any time.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleDisconnectGitHub}>Yes, Disconnect</AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                </div>
+              ) : (
+                <Button onClick={handleConnectGitHub}>Connect with GitHub</Button>
+              )
+            )}
+          </CardContent>
+        </Card>
         {/* Card for Master n8n Instance */}
         <Card>
           <CardHeader>

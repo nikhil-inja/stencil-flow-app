@@ -1,136 +1,129 @@
 // src/pages/DashboardPage.tsx
 
-import { useState, useEffect, type FormEvent } from 'react';
-import { supabase } from '../supabaseClient'; // <-- THIS IMPORT IS NEEDED
-import BlueprintsManager from '../components/BlueprintsManager';
-import { useSession } from '../context/SessionContext';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/supabaseClient';
 import toast from 'react-hot-toast';
 
-// Import the new Shadcn components
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from '@/components/ui/badge';
 
-interface Client {
-  id: string;
-  name: string;
+// Define the shape of the data we expect from our RPC
+interface DashboardStats {
+  blueprint_count: number;
+  client_count: number;
+  deployment_count: number;
+  recent_activity: ActivityLogItem[];
+}
+
+interface ActivityLogItem {
+  action_type: string;
+  status: 'success' | 'failure';
+  user_email: string;
+  details: {
+    blueprintName?: string;
+    errorMessage?: string;
+  };
+  created_at: string;
 }
 
 export default function DashboardPage() {
-  const { user, profile } = useSession();
-  const [clients, setClients] = useState<Client[]>([]);
-  const [newClientName, setNewClientName] = useState('');
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // These functions all use the 'supabase' client
   useEffect(() => {
-    if (profile) fetchClients();
-  }, [profile]);
+    const fetchStats = async () => {
+      setLoading(true);
+      const { data, error } = await supabase.rpc('get_dashboard_stats');
 
-  const fetchClients = async () => {
-    if (!profile) return;
-    const { data, error } = await supabase.from('clients').select('id, name').eq('organization_id', profile.organization_id);
-    if (error) toast.error(error.message);
-    else if (data) setClients(data);
-  };
-
-  const handleAddClient = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!newClientName.trim() || !profile) return;
-    const { data, error } = await supabase
-      .from('clients')
-      .insert([{ name: newClientName, organization_id: profile.organization_id }])
-      .select('id, name')
-      .single();
-    if (error) {
-      toast.error(error.message);
-    } else if (data) {
-      setClients([...clients, data]);
-      setNewClientName('');
-      toast.success('Client added!');
-    }
-  };
-
-  const handleDeleteClient = async (clientId: string) => {
-    if (window.confirm('Are you sure you want to delete this client?')) {
-      const { error } = await supabase.from('clients').delete().eq('id', clientId);
       if (error) {
-        toast.error(error.message);
+        toast.error('Failed to load dashboard stats: ' + error.message);
+        setStats(null);
       } else {
-        setClients(clients.filter((client) => client.id !== clientId));
-        toast.success('Client deleted.');
+        setStats(data);
       }
-    }
-  };
+      setLoading(false);
+    };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    toast.success('Logged out.');
-  };
+    fetchStats();
+  }, []);
 
-  if (!profile) return <div className="flex h-screen items-center justify-center">Loading session...</div>;
+  if (loading) {
+    return <div>Loading dashboard...</div>;
+  }
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 md:p-8">
-      {/* Page Header */}
-      <header className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">{user?.email}</span>
+    <div className="flex flex-col gap-6">
+      <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
 
-            <Button asChild variant="secondary" size="sm">
-                <Link to="/settings/team">Team Settings</Link>
-            </Button>
-          <Button variant="outline" onClick={handleLogout}>Logout</Button>
-        </div>
-      </header>
-
-      <main className="grid gap-8">
-        {/* Manage Clients Card */}
+      {/* Stat Cards using a responsive grid */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
-          <CardHeader>
-            <CardTitle>Manage Clients</CardTitle>
-            <CardDescription>Add, view, or remove client projects.</CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Blueprints</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleAddClient} className="flex items-center gap-2 mb-4 max-w-sm">
-              <Input
-                type="text"
-                placeholder="New client name"
-                value={newClientName}
-                onChange={(e) => setNewClientName(e.target.value)}
-              />
-              <Button type="submit">Add Client</Button>
-            </form>
-            <div className="border rounded-md">
-              <ul className="divide-y">
-                {clients.map((client) => (
-                  <li key={client.id} className="flex items-center justify-between p-3">
-                    <Link to={`/client/${client.id}`} className="font-medium text-primary hover:underline">
-                      {client.name}
-                    </Link>
-                    <Button variant="ghost" size="sm" onClick={() => handleDeleteClient(client.id)}>Delete</Button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <div className="text-2xl font-bold">{stats?.blueprint_count ?? 0}</div>
           </CardContent>
         </Card>
-
-        {/* Manage Blueprints Card */}
         <Card>
-          <CardHeader>
-            <CardTitle>Manage Blueprints</CardTitle>
-            <CardDescription>Create or update your master workflow templates.</CardDescription>
-            <Button asChild variant="secondary" size="sm">
-                <Link to="/import/n8n">Import from n8n</Link>
-            </Button>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Managed Clients</CardTitle>
           </CardHeader>
           <CardContent>
-            <BlueprintsManager />
+            <div className="text-2xl font-bold">{stats?.client_count ?? 0}</div>
           </CardContent>
         </Card>
-      </main>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Deployments</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats?.deployment_count ?? 0}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Activity in a full-width card */}
+      <Card className="col-span-1 lg:col-span-3">
+        <CardHeader>
+          <CardTitle>Recent Activity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Action</TableHead>
+                <TableHead>User</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {stats?.recent_activity && stats.recent_activity.length > 0 ? (
+                stats.recent_activity.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell className="font-medium">{item.action_type.replace(/_/g, ' ')}</TableCell>
+                    <TableCell>{item.user_email}</TableCell>
+                    <TableCell>
+                      <Badge variant={item.status === 'success' ? 'default' : 'destructive'}>
+                        {item.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-24 text-center">
+                    No recent activity.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

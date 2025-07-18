@@ -25,6 +25,7 @@ export default function EditBlueprintPage() {
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [rollingBackSha, setRollingBackSha] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Form state
   const [name, setName] = useState('');
@@ -53,10 +54,14 @@ export default function EditBlueprintPage() {
       }
 
       const { data: { session } } = await supabase.auth.getSession();
-      if (session?.provider_token) {
+      // We only need the main access token now
+      if (session) { 
         const { data: commitHistory, error: historyError } = await supabase.functions.invoke('get-commit-history', {
           headers: { 'Authorization': `Bearer ${session.access_token}` },
-          body: { blueprintId, githubToken: session.provider_token },
+          body: { 
+            blueprintId,
+            // The githubToken is no longer needed here
+          }, 
         });
         if (historyError) throw historyError;
         setHistory(commitHistory);
@@ -75,6 +80,7 @@ export default function EditBlueprintPage() {
   const handleSaveChanges = async (event: FormEvent) => {
     event.preventDefault();
     setIsSaving(true);
+    
     let parsedJson;
     try {
       parsedJson = JSON.parse(workflowJson);
@@ -83,20 +89,25 @@ export default function EditBlueprintPage() {
       setIsSaving(false);
       return;
     }
-
+  
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.provider_token) throw new Error("You must be logged in via GitHub to save changes.");
-
+      if (!session) throw new Error("You must be logged in.");
+  
       const { error } = await supabase.functions.invoke('update-blueprint', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
-        body: { blueprintId, description, workflowJson: parsedJson, githubToken: session.provider_token },
+        body: {
+          blueprintId,
+          description,
+          workflowJson: parsedJson,
+          // The githubToken is no longer needed here
+        },
       });
-
+  
       if (error) throw error;
       toast.success('Blueprint updated successfully!');
-      fetchAllData(); // Refresh data after saving
-
+      fetchAllData();
+  
     } catch (error: any) {
       toast.error(`Failed to save changes: ${error.message}`);
     } finally {
@@ -111,24 +122,53 @@ export default function EditBlueprintPage() {
     setRollingBackSha(commitSha);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.provider_token) throw new Error("You must be logged in via GitHub to perform this action.");
-
+      if (!session) throw new Error("You must be logged in.");
+  
       const { error } = await supabase.functions.invoke('rollback-blueprint', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
-        body: { blueprintId, commitSha, githubToken: session.provider_token },
+        body: {
+          blueprintId,
+          commitSha,
+          // The githubToken is no longer needed here
+        },
       });
-
+  
       if (error) throw error;
       
       toast.success('Rollback successful! Refreshing data...');
-      fetchAllData(); // Refresh data to show the new state
-
+      fetchAllData();
+  
     } catch (error: any) {
       toast.error(`Rollback failed: ${error.message}`);
     } finally {
       setRollingBackSha(null);
     }
   };
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("You must be logged in.");
+
+        const { data, error } = await supabase.functions.invoke('sync-blueprint-from-n8n', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+            body: { 
+                blueprintId,
+                // The githubToken is no longer needed here
+            },
+        });
+
+        if (error) throw error;
+        toast.success(data.message);
+        fetchAllData();
+    } catch (e: any) {
+        toast.error(`Sync failed: ${e.message}`);
+    } finally {
+        setIsSyncing(false);
+    }
+};
+
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading Blueprint...</div>;
 
@@ -145,8 +185,17 @@ export default function EditBlueprintPage() {
         <div className="md:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>{name}</CardTitle>
-              <CardDescription>Make changes and save the new version as a commit.</CardDescription>
+              {/* START OF CHANGES */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>{name}</CardTitle>
+                  <CardDescription>Make changes and save the new version as a commit.</CardDescription>
+                </div>
+                <Button variant="secondary" onClick={handleSync} disabled={isSyncing}>
+                  {isSyncing ? 'Syncing...' : 'Sync from n8n'}
+                </Button>
+              </div>
+              {/* END OF CHANGES */}
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSaveChanges} className="space-y-6">

@@ -6,7 +6,6 @@ import { useSession } from '../context/SessionContext';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom'; 
 
-// Import the Shadcn components
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,10 +21,10 @@ export default function BlueprintsManager() {
   const { profile } = useSession();
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   
-  // Form state
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [workflowJson, setWorkflowJson] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -63,27 +62,20 @@ export default function BlueprintsManager() {
       toast.error('Blueprint name is required.');
       return;
     }
+    setIsCreating(true);
   
     try {
-      // Get the current session to find the provider_token
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("User not logged in.");
+      if (!session.provider_token) throw new Error("You must be logged in with GitHub to create a blueprint.");
   
-      const githubToken = session.provider_token;
-      if (!githubToken) {
-        throw new Error("You must be logged in with GitHub to create a blueprint.");
-      }
-  
-      // Call the function, now passing the token in the body
       const { data: newBlueprint, error } = await supabase.functions.invoke('create-blueprint', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
         body: { 
           name, 
           description,
-          githubToken,
-          workflowJson
+          githubToken: session.provider_token,
+          workflowJson,
         },
       });
   
@@ -92,10 +84,13 @@ export default function BlueprintsManager() {
       setBlueprints([newBlueprint, ...blueprints]);
       setName('');
       setDescription('');
+      setWorkflowJson('');
       toast.success('Blueprint and GitHub repo created!');
   
     } catch (error: any) {
       toast.error(`Failed to create blueprint: ${error.message}`);
+    } finally {
+        setIsCreating(false);
     }
   };
 
@@ -103,7 +98,6 @@ export default function BlueprintsManager() {
 
   return (
     <div className="space-y-6">
-      {/* Form for creating new blueprints */}
       <form onSubmit={handleAddBlueprint} className="space-y-4">
         <div className="grid w-full items-center gap-1.5">
             <Label htmlFor="bp-name">Blueprint Name</Label>
@@ -136,32 +130,40 @@ export default function BlueprintsManager() {
                 className="font-mono h-48"
             />
         </div>
-        <Button type="submit">Create Blueprint</Button>
+        <Button type="submit" disabled={isCreating}>
+          {isCreating ? 'Creating...' : 'Create Blueprint'}
+        </Button>
       </form>
 
-      {/* List of existing blueprints */}
       <div className="border rounded-md">
-        <ul className="divide-y">
-          {blueprints.map((bp) => (
-            <li key={bp.id} className="flex items-center justify-between p-3">
-            <div>
-              <p className="font-medium">{bp.name}</p>
-              <p className="text-sm text-muted-foreground">{bp.description || 'No description.'}</p>
+        {/* THIS IS THE CHANGE: Check if the list is empty */}
+        {blueprints.length > 0 ? (
+            <ul className="divide-y">
+            {blueprints.map((bp) => (
+                <li key={bp.id} className="flex items-center justify-between p-3">
+                <div>
+                    <p className="font-medium">{bp.name}</p>
+                    <p className="text-sm text-muted-foreground">{bp.description || 'No description.'}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button asChild variant="outline" size="sm">
+                    <Link to={`/blueprint/${bp.id}/edit`}>Edit</Link>
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => handleDeleteBlueprint(bp.id)}>
+                    Delete
+                    </Button>
+                </div>
+                </li>
+            ))}
+            </ul>
+        ) : (
+            <div className="text-center p-8">
+                <h3 className="text-lg font-semibold">No Blueprints Found</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                    Create your first blueprint above or import one from n8n.
+                </p>
             </div>
-          
-            {/* START OF CHANGES */}
-            <div className="flex items-center gap-2">
-              <Button asChild variant="outline" size="sm">
-                <Link to={`/blueprint/${bp.id}/edit`}>Edit</Link>
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => handleDeleteBlueprint(bp.id)}>
-                Delete
-              </Button>
-            </div>
-            {/* END OF CHANGES */}
-          </li>
-          ))}
-        </ul>
+        )}
       </div>
     </div>
   );

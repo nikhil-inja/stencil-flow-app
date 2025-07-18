@@ -12,11 +12,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 // Define data shapes
 interface Client { id: string; name: string; }
 interface N8nInstance { id: string; instance_url: string; }
 interface Blueprint { id: string; name: string; }
+interface Deployment {
+  id: string;
+  blueprint_id: string;
+  n8n_workflow_id: string;
+}
+interface N8nWorkflowStatus {
+  id: string;
+  active: boolean;
+}
 
 export default function ClientDetailPage() {
   const { clientId } = useParams<{ clientId: string }>();
@@ -25,52 +37,98 @@ export default function ClientDetailPage() {
   const [client, setClient] = useState<Client | null>(null);
   const [instance, setInstance] = useState<N8nInstance | null>(null);
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
+  const [deployments, setDeployments] = useState<Deployment[]>([]);
+  const [workflowStatuses, setWorkflowStatuses] = useState<Map<string, boolean>>(new Map());
+  
   const [loading, setLoading] = useState(true);
-  const [deploying, setDeploying] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [deployingId, setDeployingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  // Form state
-  const [instanceUrl, setInstanceUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
+  const [isWarningModalOpen, setIsWarningModalOpen] = useState(false);
+  const [deploymentToUpdate, setDeploymentToUpdate] = useState<{ deploymentId: string; blueprintId: string } | null>(null);
+
+  // Form state - Use localStorage to pre-fill
+  const [instanceUrl, setInstanceUrl] = useState(() => localStorage.getItem(`form_url_${clientId}`) || '');
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem(`form_apiKey_${clientId}`) || '');
+  
+  // When the user types, save the data to localStorage
+  useEffect(() => {
+    localStorage.setItem(`form_url_${clientId}`, instanceUrl);
+  }, [instanceUrl, clientId]);
 
   useEffect(() => {
-    if (profile && clientId) {
-      fetchClientAndInstance();
-      fetchBlueprints();
-    }
-  }, [profile, clientId]);
+    localStorage.setItem(`form_apiKey_${clientId}`, apiKey);
+  }, [apiKey, clientId]);
 
-  const fetchClientAndInstance = async () => {
+  const clearPersistedFormData = () => {
+    localStorage.removeItem(`form_url_${clientId}`);
+    localStorage.removeItem(`form_apiKey_${clientId}`);
+  };
+
+  const fetchAllData = async () => {
+    if (!profile || !clientId) return;
     setLoading(true);
-    const { data: clientData } = await supabase.from('clients').select('id, name').eq('id', clientId).single();
-    setClient(clientData);
 
-    const { data: instanceData, error: instanceError } = await supabase.from('n8n_instances').select('id, instance_url').eq('client_id', clientId).single();
-    if (instanceError && instanceError.code !== 'PGRST116') {
-      toast.error('Error fetching instance: ' + instanceError.message);
-    } else if (instanceData) {
-      setInstance(instanceData);
-      setInstanceUrl(instanceData.instance_url);
+    try {
+        const { data: clientData } = await supabase.from('clients').select('id, name').eq('id', clientId).single();
+        setClient(clientData);
+
+        const { data: instanceData } = await supabase.from('n8n_instances').select('id, instance_url').eq('client_id', clientId).single();
+        setInstance(instanceData);
+        
+        // Only overwrite the form state if there is saved data in the database
+        if (instanceData?.instance_url) {
+            setInstanceUrl(instanceData.instance_url);
+        }
+
+        const blueprintPromise = supabase.from('blueprints').select('id, name').eq('organization_id', profile.organization_id);
+        const deploymentsPromise = supabase.from('deployments').select('id, blueprint_id, n8n_workflow_id').eq('client_id', clientId);
+        
+        const [blueprintResult, deploymentsResult] = await Promise.all([blueprintPromise, deploymentsPromise]);
+
+        if (blueprintResult.error) toast.error('Failed to fetch blueprints.'); else setBlueprints(blueprintResult.data || []);
+        if (deploymentsResult.error) toast.error("Failed to fetch deployments."); else setDeployments(deploymentsResult.data || []);
+        
+        if (instanceData) {
+            const { data: statusesResult, error: statusesError } = await supabase.functions.invoke('get-n8n-workflows', { 
+                headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` },
+                body: { clientId } 
+            });
+            if (statusesError) {
+                toast.error("Could not get workflow statuses from n8n.");
+            } else if (statusesResult?.data) {
+                const statusMap = new Map((statusesResult.data as N8nWorkflowStatus[]).map((wf) => [wf.id, wf.active]));
+                setWorkflowStatuses(statusMap);
+            }
+        } else {
+            setWorkflowStatuses(new Map());
+        }
+
+    } catch (e: any) {
+        toast.error("An error occurred while loading page data.");
+    } finally {
+        setLoading(false);
     }
-    setLoading(false);
   };
 
-  const fetchBlueprints = async () => {
-    if (!profile) return;
-    const { data, error } = await supabase.from('blueprints').select('id, name').eq('organization_id', profile.organization_id);
-    if (error) toast.error('Error fetching blueprints: ' + error.message);
-    else if (data) setBlueprints(data);
-  };
+  useEffect(() => {
+    fetchAllData();
+  }, [profile, clientId]);
 
   const handleSaveInstance = async (event: FormEvent) => {
     event.preventDefault();
     if (!profile || !clientId) return;
+    setIsSaving(true);
     const { error } = await supabase.from('n8n_instances').upsert({ client_id: clientId, instance_url: instanceUrl, api_key: apiKey }, { onConflict: 'client_id' });
     if (error) {
       toast.error('Error saving instance: ' + error.message);
     } else {
       toast.success('n8n instance details saved!');
-      fetchClientAndInstance();
+      clearPersistedFormData();
+      fetchAllData();
     }
+    setIsSaving(false);
   };
   
   const handleDeleteInstance = async () => {
@@ -83,48 +141,97 @@ export default function ClientDetailPage() {
         setInstance(null);
         setInstanceUrl('');
         setApiKey('');
+        clearPersistedFormData();
         toast.success('Connection deleted.');
       }
     }
   };
 
   const handleDeploy = async (blueprintId: string) => {
-    if (!clientId || !instance) {
-      toast.error('Client details or n8n instance connection is missing.');
-      return;
-    }
-    const blueprintToDeploy = blueprints.find(bp => bp.id === blueprintId);
-    if (!window.confirm(`Are you sure you want to deploy the "${blueprintToDeploy?.name}" blueprint to ${client?.name}?`)) return;
-  
-    setDeploying(blueprintId);
+    if (!clientId || !instance) return toast.error('Client details or n8n instance connection is missing.');
+    setDeployingId(blueprintId);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("You must be logged in.");
-  
       const { data, error } = await supabase.functions.invoke('deploy-blueprint', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
-        body: { 
-          blueprintId, // Pass the blueprintId
-          clientId,    // Pass the clientId from the page's params
-        },
+        body: { blueprintId, clientId, githubToken: session.provider_token },
       });
-  
       if (error) throw error;
-      
       toast.success(data.message);
-  
+      fetchAllData();
     } catch (error: any) {
       toast.error(`Deployment failed: ${error.message}`);
     } finally {
-      setDeploying(null);
+      setDeployingId(null);
     }
   };
+  
+  const proceedWithUpdate = async () => {
+    if (!deploymentToUpdate) return;
+    const { deploymentId, blueprintId } = deploymentToUpdate;
+    setDeployingId(blueprintId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.provider_token) throw new Error("You must be logged in via GitHub.");
+      const { data, error } = await supabase.functions.invoke('update-deployed-workflow', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: { deploymentId, githubToken: session.provider_token },
+      });
+      if (error) throw error;
+      toast.success(data.message);
+      fetchAllData();
+    } catch (e: any) {
+      toast.error(`Update failed: ${e.message}`);
+    } finally {
+      setDeployingId(null);
+      setDeploymentToUpdate(null);
+    }
+  };
+
+  const handleUpdate = (deployment: Deployment) => {
+    const isActive = workflowStatuses.get(deployment.n8n_workflow_id) ?? false;
+    setDeploymentToUpdate({ deploymentId: deployment.id, blueprintId: deployment.blueprint_id });
+    if (isActive) {
+      setIsWarningModalOpen(true);
+    } else {
+      proceedWithUpdate();
+    }
+  };
+
+  const handleToggleActive = async (deployment: Deployment, currentStatus: boolean) => {
+    const action = currentStatus ? 'deactivate' : 'activate';
+    setTogglingId(deployment.id);
+    const newStatuses = new Map(workflowStatuses);
+    newStatuses.set(deployment.n8n_workflow_id, !currentStatus);
+    setWorkflowStatuses(newStatuses);
+
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("You must be logged in.");
+        const { error } = await supabase.functions.invoke('toggle-workflow-activation', {
+            headers: { 'Authorization': `Bearer ${session.access_token}` },
+            body: { deploymentId: deployment.id, action },
+        });
+        if (error) throw error;
+        toast.success(`Workflow ${action}d successfully.`);
+    } catch (e: any) {
+        toast.error(`Failed to ${action} workflow: ${e.message}`);
+        const revertedStatuses = new Map(workflowStatuses);
+        revertedStatuses.set(deployment.n8n_workflow_id, currentStatus);
+        setWorkflowStatuses(revertedStatuses);
+    } finally {
+        setTogglingId(null);
+    }
+  };
+
+  const deployedBlueprintIds = new Set(deployments.map(d => d.blueprint_id));
+  const availableBlueprints = blueprints.filter(bp => !deployedBlueprintIds.has(bp.id));
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
   return (
     <div className="container mx-auto p-4 sm:p-6 md:p-8">
-      {/* Page Header */}
       <header className="mb-8">
         <Button asChild variant="ghost" className="mb-2 -ml-4">
             <Link to="/">&larr; Back to Dashboard</Link>
@@ -133,37 +240,91 @@ export default function ClientDetailPage() {
       </header>
 
       <main className="grid md:grid-cols-2 gap-8">
-        {/* Left Column: Deployment */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Deploy a Blueprint</CardTitle>
-            <CardDescription>Select a master blueprint to deploy to this client.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!instance ? (
-                <p className="text-sm text-destructive font-medium">Please save n8n connection details below before deploying.</p>
-            ) : (
-                <div className="border rounded-md">
-                    <ul className="divide-y">
-                        {blueprints.map(bp => (
-                        <li key={bp.id} className="flex items-center justify-between p-3">
-                            <span className="font-medium">{bp.name}</span>
-                            <Button 
-                                size="sm"
-                                onClick={() => handleDeploy(bp.id)}
-                                disabled={deploying === bp.id}
-                            >
-                            {deploying === bp.id ? 'Deploying...' : 'Deploy'}
-                            </Button>
-                        </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="flex flex-col gap-8">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Deployed Workflows</CardTitle>
+                    <CardDescription>Activate, deactivate, or update deployed workflows.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {!instance ? (
+                        <div className="text-center p-8 text-sm text-muted-foreground">
+                            Please connect to the client's n8n instance to see deployed workflows.
+                        </div>
+                    ) : (
+                        <div className="border rounded-md">
+                        <ul className="divide-y">
+                            {deployments.length > 0 ? deployments.map(dep => {
+                            const isActive = workflowStatuses.get(dep.n8n_workflow_id) ?? false;
+                            const blueprintInfo = blueprints.find(b => b.id === dep.blueprint_id);
+                            const isUpdating = deployingId === dep.blueprint_id;
+                            const isToggling = togglingId === dep.id;
+                            
+                            const statusText = isActive ? 'Active' : 'Inactive';
+                            const statusColor = isActive ? 'text-green-500' : 'text-orange-500';
 
-        {/* Right Column: n8n Connection */}
+                            return (
+                                <li key={dep.id} className="flex items-center justify-between p-3">
+                                <div>
+                                    <p className="font-medium">{blueprintInfo?.name || 'Unknown Blueprint'}</p>
+                                    <p className={`text-xs font-semibold ${statusColor}`}>{statusText}</p>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <TooltipProvider>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Switch
+                                                    checked={isActive}
+                                                    onCheckedChange={() => handleToggleActive(dep, isActive)}
+                                                    disabled={isToggling || isUpdating}
+                                                />
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                                <p>{isActive ? 'Deactivate' : 'Activate'} Workflow</p>
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
+                                    <Button variant="outline" size="sm" onClick={() => handleUpdate(dep)} disabled={isToggling || isUpdating}>
+                                      {isUpdating ? 'Updating...' : 'Update'}
+                                    </Button>
+                                </div>
+                                </li>
+                            );
+                            }) : <p className="p-4 text-sm text-muted-foreground text-center">No workflows have been deployed for this client.</p>}
+                        </ul>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Available Blueprints</CardTitle>
+                    <CardDescription>Deploy new workflows to this client.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {!instance ? (
+                        <div className="text-center p-8 text-sm text-muted-foreground">
+                            Please connect to the client's n8n instance to deploy blueprints.
+                        </div>
+                    ) : (
+                        <div className="border rounded-md">
+                        <ul className="divide-y">
+                            {availableBlueprints.length > 0 ? availableBlueprints.map(bp => (
+                            <li key={bp.id} className="flex items-center justify-between p-3">
+                                <p className="font-medium">{bp.name}</p>
+                                <Button variant="outline" size="sm" onClick={() => handleDeploy(bp.id)} disabled={deployingId === bp.id}>
+                                  {deployingId === bp.id ? 'Deploying...' : 'Deploy'}
+                                </Button>
+                            </li>
+                            )) : <p className="p-4 text-sm text-muted-foreground text-center">No new blueprints available to deploy.</p>}
+                        </ul>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+        </div>
+
         <Card>
           <CardHeader>
             <CardTitle>n8n Instance Connection</CardTitle>
@@ -173,45 +334,38 @@ export default function ClientDetailPage() {
             <form onSubmit={handleSaveInstance} className="space-y-4">
               <div className="grid w-full items-center gap-1.5">
                 <Label htmlFor="url">n8n Instance URL</Label>
-                <Input
-                  id="url"
-                  type="url"
-                  placeholder="https://n8n.my-client.com"
-                  value={instanceUrl}
-                  onChange={(e) => setInstanceUrl(e.target.value)}
-                  required
-                />
+                <Input id="url" value={instanceUrl} onChange={(e) => setInstanceUrl(e.target.value)} required disabled={isSaving}/>
               </div>
               <div className="grid w-full items-center gap-1.5">
                 <Label htmlFor="apiKey">n8n API Key</Label>
-                <Input
-                  id="apiKey"
-                  type="password"
-                  placeholder={instance ? '•••••••••••••••••••• (Enter new key to update)' : 'Enter API Key'}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  required={!instance}
-                />
+                <Input id="apiKey" type="password" placeholder={instance ? '••••••••••••••••••••' : ''} value={apiKey} onChange={(e) => setApiKey(e.target.value)} required={!instance} disabled={isSaving}/>
               </div>
-              <Button type="submit" className="w-full">
-                {instance ? 'Update Connection' : 'Save Connection'}
+              <Button type="submit" className="w-full" disabled={isSaving}>
+                {isSaving ? 'Saving...' : 'Save Connection'}
               </Button>
             </form>
-            {instance && (
-                <>
-                    <Separator className="my-4" />
-                    <Button 
-                        variant="destructive" 
-                        className="w-full"
-                        onClick={handleDeleteInstance}
-                    >
-                        Delete Connection
-                    </Button>
-                </>
-            )}
+            {instance && (<>
+                <Separator className="my-4" />
+                <Button variant="destructive" className="w-full" onClick={handleDeleteInstance}>Delete Connection</Button>
+            </>)}
           </CardContent>
         </Card>
       </main>
+      <AlertDialog open={isWarningModalOpen} onOpenChange={setIsWarningModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update Active Workflow?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This workflow is currently active. Pushing an update may disrupt its ongoing executions.
+              Are you sure you want to proceed?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeploymentToUpdate(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={proceedWithUpdate}>Yes, Proceed with Update</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

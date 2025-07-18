@@ -97,3 +97,80 @@ entrypoint = "./functions/get-n8n-workflow-details/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/get-n8n-workflow-details/*.html" ]
+
+[functions.update-deployed-workflow]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-deployed-workflow/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/update-deployed-workflow/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/update-deployed-workflow/*.html" ]
+
+[functions.sync-blueprint-from-n8n]
+enabled = true
+verify_jwt = true
+import_map = "./functions/sync-blueprint-from-n8n/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/sync-blueprint-from-n8n/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/sync-blueprint-from-n8n/*.html" ]
+
+[functions.toggle-workflow-activation]
+enabled = true
+verify_jwt = true
+import_map = "./functions/toggle-workflow-activation/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/toggle-workflow-activation/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/toggle-workflow-activation/*.html" ]
+
+[functions.get-n8n-workflows]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-n8n-workflows/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/get-n8n-workflows/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/get-n8n-workflows/*.html" ]
+
+[functions.check-github-connection]
+enabled = true
+verify_jwt = true
+import_map = "./functions/check-github-connection/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/check-github-connection/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/check-github-connection/*.html" ]
+
+[functions.disconnect-github]
+enabled = true
+verify_jwt = true
+import_map = "./functions/disconnect-github/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/disconnect-github/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/disconnect-github/*.html" ]
+
+[functions.store-github-token]
+enabled = true
+verify_jwt = true
+import_map = "./functions/store-github-token/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/store-github-token/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/store-github-token/*.html" ]

@@ -24,40 +24,46 @@ serve(async (req) => {
     if (!user) throw new Error("User not authenticated.");
 
     // 2. Get data from the request body
-    const { blueprintId, clientId } = await req.json();
-    if (!blueprintId || !clientId) throw new Error("Missing blueprintId or clientId.");
+    const { blueprintId, clientId, githubToken } = await req.json();
+    if (!blueprintId || !clientId || !githubToken) throw new Error("Missing blueprintId, clientId, or githubToken.");
 
-    // 3. Get blueprint and client n8n instance details
+    // 3. Get blueprint, client, and n8n instance details
     const supabaseAdmin = createClient(
         Deno.env.get('SUPABASE_URL') ?? '',
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
       );
     
-    const { data: blueprint } = await supabaseAdmin.from('blueprints').select('name, workflow_json').eq('id', blueprintId).single();
+    const { data: blueprint } = await supabaseAdmin.from('blueprints').select('name, workflow_json, git_repository').eq('id', blueprintId).single();
     if (!blueprint) throw new Error("Blueprint not found.");
 
-    const { data: instance } = await supabaseAdmin.from('n8n_instances').select('instance_url, api_key').eq('client_id', clientId).single();
-    if (!instance) throw new Error("n8n instance details for this client not found.");
+    // Fetch the client's name along with the instance details
+    const { data: client } = await supabaseAdmin.from('clients').select('name, n8n_instances(instance_url, api_key)').eq('id', clientId).single();
+    const instance = client?.n8n_instances;
+    if (!instance || !client) throw new Error("n8n instance details or client name not found.");
 
-    // 4. Sanitize the workflow JSON to create a valid payload
-    const userWorkflow = blueprint.workflow_json as Record<string, unknown>;
+    // 4. Sanitize the workflow JSON
+    const userWorkflow = blueprint.workflow_json as any;
     const workflowToDeploy = {
         name: blueprint.name,
         nodes: userWorkflow.nodes,
         connections: userWorkflow.connections || {},
         settings: userWorkflow.settings || {},
-        // The 'active: false' property has been removed from this object
     };
     
     // 5. Make the API call to the client's n8n instance
-    const cleanedUrl = instance.instance_url.replace(/\/$/, "");
+    // instance may be an array if n8n_instances is a relation; handle accordingly
+    const n8nInstance = Array.isArray(instance) ? instance[0] : instance;
+    if (!n8nInstance?.instance_url || !n8nInstance?.api_key) {
+      throw new Error("n8n instance details are missing or malformed.");
+    }
+    const cleanedUrl = n8nInstance.instance_url.replace(/\/$/, "");
     const targetUrl = `${cleanedUrl}/api/v1/workflows`;
     
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-N8N-API-KEY': instance.api_key,
+        'X-N8N-API-KEY': n8nInstance.api_key,
       },
       body: JSON.stringify(workflowToDeploy),
     });
@@ -66,6 +72,50 @@ serve(async (req) => {
       const errorText = await response.text();
       throw new Error(`n8n API Error (Status ${response.status}): ${errorText}`);
     }
+
+    const n8nWorkflowData = await response.json();
+    const n8nWorkflowId = n8nWorkflowData.id;
+
+    // 6. Get latest commit SHA from the main branch
+    const repoPath = new URL(blueprint.git_repository).pathname.substring(1);
+    const mainBranchInfo = await fetch(`https://api.github.com/repos/${repoPath}/branches/main`, {
+      headers: { 'Authorization': `token ${githubToken}` },
+    });
+    if (!mainBranchInfo.ok) throw new Error("Could not find main branch in repository.");
+    const mainBranchData = await mainBranchInfo.json();
+    const mainBranchSha = mainBranchData.commit.sha;
+
+    // 7. Record the deployment in our database
+    const { data: newDeployment, error: deploymentError } = await supabaseAdmin
+      .from('deployments')
+      .upsert({
+        blueprint_id: blueprintId,
+        client_id: clientId,
+        n8n_workflow_id: n8nWorkflowId,
+        deployed_commit_sha: mainBranchSha,
+      }, { onConflict: 'blueprint_id, client_id' })
+      .select('id')
+      .single();
+
+    if (deploymentError || !newDeployment) throw deploymentError || new Error("Failed to create or retrieve deployment record.");
+
+    // 8. NEW: Create a dedicated branch for this client in the GitHub repo
+    const clientBranchName = `client/${client.name.toLowerCase().replace(/\s+/g, '-')}`;
+    await fetch(`https://api.github.com/repos/${repoPath}/git/refs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `token ${githubToken}` },
+        body: JSON.stringify({
+            ref: `refs/heads/${clientBranchName}`,
+            sha: mainBranchSha,
+        }),
+    });
+    // Note: This will error if the branch already exists. A more robust solution would check first.
+
+    // 9. NEW: Update the new deployment record with the branch name
+    await supabaseAdmin
+      .from('deployments')
+      .update({ git_branch: clientBranchName })
+      .eq('id', newDeployment.id);
 
     return new Response(JSON.stringify({ message: `Successfully deployed '${blueprint.name}'!` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -79,4 +129,4 @@ serve(async (req) => {
       status: 500,
     });
   }
-})  
+})

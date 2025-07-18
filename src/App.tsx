@@ -1,37 +1,46 @@
 // src/App.tsx
-
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { SessionProvider } from './context/SessionContext';
+import { Toaster } from 'react-hot-toast';
+
+// Import Layout and Page Components
+import SharedLayout from './components/SharedLayout';
+import ProtectedRoute from './components/ProtectedRoute';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
-import ProtectedRoute from './components/ProtectedRoute';
-import { SessionProvider } from './context/SessionContext';
+import BlueprintsPage from './pages/BlueprintsPage';
+import ClientsPage from './pages/ClientsPage';
 import ClientDetailPage from './pages/ClientDetailPage';
 import EditBlueprintPage from './pages/EditBlueprintPage';
-import { Toaster } from 'react-hot-toast';
 import TeamSettingsPage from './pages/TeamSettingsPage';
-import AcceptInvitePage from './pages/AcceptInvitePage';
 import ImportPage from './pages/ImportPage';
+import AcceptInvitePage from './pages/AcceptInvitePage';
+import GitHubCallbackPage from './pages/GitHubCallbackPage';
 
-function App() {
+export default function App() {
   return (
     <SessionProvider>
-    <Toaster position="bottom-right" />
+      <Toaster position="bottom-right" />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<AuthPage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
-          <Route path="/" element={<ProtectedRoute />}>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/client/:clientId" element={<ClientDetailPage />} />
-            <Route path="/blueprint/:blueprintId/edit" element={<EditBlueprintPage />} />
-            <Route path="/settings/team" element={<TeamSettingsPage />} />
-            <Route path="/import/n8n" element={<ImportPage />} />
+          {/* Protected Routes now render inside the SharedLayout */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<SharedLayout />}>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/blueprints" element={<BlueprintsPage />} />
+              <Route path="/clients" element={<ClientsPage />} />
+              <Route path="/client/:clientId" element={<ClientDetailPage />} />
+              <Route path="/blueprint/:blueprintId/edit" element={<EditBlueprintPage />} />
+              <Route path="/settings/team" element={<TeamSettingsPage />} />
+              <Route path="/import/n8n" element={<ImportPage />} />
+              <Route path="/github-callback" element={<GitHubCallbackPage />} />
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>
     </SessionProvider>
   );
 }
-
-export default App;

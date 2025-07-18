@@ -15,7 +15,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const navigate = useNavigate(); 
+  const navigate = useNavigate();
 
   // Handles Email & Password Login
   const handleEmailLogin = async (event: FormEvent) => {
@@ -27,26 +27,10 @@ export default function AuthPage() {
       toast.error(error.message);
     } else {
       toast.success("Logged in successfully!");
-      navigate('/'); // <-- 3. REDIRECT TO DASHBOARD ON SUCCESS
+      navigate('/');
     }
     setLoading(false);
   };
-
-  // Handles GitHub OAuth Login
-  async function signInWithGitHub() {
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'github',
-      options: {
-        redirectTo: window.location.origin,
-        scopes: 'repo',
-      },
-    });
-    if (error) {
-      toast.error(error.message);
-      setLoading(false);
-    }
-  }
 
   // A separate function for Sign Up
   const handleSignUp = async (event: FormEvent) => {
@@ -62,56 +46,55 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="w-full lg:grid lg:min-h-screen lg:grid-cols-2">
-      <div className="flex items-center justify-center py-12">
-        <Card className="mx-auto w-[380px]">
-          <CardHeader>
-            <CardTitle className="text-2xl">Login</CardTitle>
-            <CardDescription>
-              Sign in to your account to manage your workflows.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4">
-              <Button variant="outline" className="w-full" onClick={signInWithGitHub} disabled={loading}>
-                Login with GitHub
-              </Button>
-              <div className="relative my-2">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-background px-2 text-muted-foreground">
-                    Or continue with
-                  </span>
-                </div>
-              </div>
-              <form onSubmit={handleEmailLogin} className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" placeholder="m@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={loading} />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required disabled={loading} />
-                </div>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? 'Logging in...' : 'Login with Email'}
-                </Button>
-              </form>
+    <div className="flex min-h-screen w-full items-center justify-center bg-muted/40 p-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Login</CardTitle>
+          <CardDescription>
+            Enter your email below to login to your account.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleEmailLogin} className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="m@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={loading}
+              />
             </div>
-            <div className="mt-4 text-center text-sm">
-              Don&apos;t have an account?{" "}
-              <button onClick={(e: any) => handleSignUp(e)} className="underline" disabled={loading}>
-                Sign up
-              </button>
+            <div className="grid gap-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={loading}
+              />
             </div>
-          </CardContent>
-        </Card>
-      </div>
-      <div className="hidden bg-muted lg:block">
-        {/* You can add an image or branding here later */}
-      </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? 'Logging in...' : 'Login'}
+            </Button>
+          </form>
+          <div className="mt-4 text-center text-sm">
+            Don&apos;t have an account?{" "}
+            <button
+              onClick={(e: any) => handleSignUp(e)}
+              className="underline"
+              disabled={loading}
+            >
+              Sign up
+            </button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
