@@ -33,17 +33,17 @@ export default function AuthPage() {
   };
 
   // A separate function for Sign Up
-  const handleSignUp = async (event: FormEvent) => {
-    event.preventDefault();
-    setLoading(true);
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success('Check your email to verify your new account!');
-    }
-    setLoading(false);
-  };
+//   const handleSignUp = async (event: FormEvent) => {
+//     event.preventDefault();
+//     setLoading(true);
+//     const { error } = await supabase.auth.signUp({ email, password });
+//     if (error) {
+//       toast.error(error.message);
+//     } else {
+//       toast.success('Check your email to verify your new account!');
+//     }
+//     setLoading(false);
+//   };
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-muted/40 p-4">
@@ -83,7 +83,7 @@ export default function AuthPage() {
               {loading ? 'Logging in...' : 'Login'}
             </Button>
           </form>
-          <div className="mt-4 text-center text-sm">
+          {/* <div className="mt-4 text-center text-sm">
             Don&apos;t have an account?{" "}
             <button
               onClick={(e: any) => handleSignUp(e)}
@@ -92,7 +92,7 @@ export default function AuthPage() {
             >
               Sign up
             </button>
-          </div>
+          </div> */}
         </CardContent>
       </Card>
     </div>
