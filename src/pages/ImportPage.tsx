@@ -22,7 +22,7 @@ export default function ImportPage() {
   const [workflows, setWorkflows] = useState<N8nWorkflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [importingId, setImportingId] = useState<string | null>(null);
+  const [, setImportingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchWorkflows = async () => {
