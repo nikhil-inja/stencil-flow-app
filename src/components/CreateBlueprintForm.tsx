@@ -23,7 +23,7 @@ export default function CreateBlueprintForm({ onBlueprintCreated }: CreateBluepr
   const handleAddBlueprint = async (event: FormEvent) => {
     event.preventDefault();
     if (!name.trim()) {
-      toast.error('Blueprint name is required.');
+      toast.error('Automation name is required.');
       return;
     }
     setIsCreating(true);
@@ -31,7 +31,7 @@ export default function CreateBlueprintForm({ onBlueprintCreated }: CreateBluepr
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("User not logged in.");
-      if (!session.provider_token) throw new Error("You must be logged in with GitHub to create a blueprint.");
+      if (!session.provider_token) throw new Error("You must be logged in with GitHub to create an automation.");
   
       // NOTE: The function now returns the full blueprint object, not just a partial one.
       const { error } = await supabase.functions.invoke('create-blueprint', {
@@ -50,11 +50,11 @@ export default function CreateBlueprintForm({ onBlueprintCreated }: CreateBluepr
       setName('');
       setDescription('');
       setWorkflowJson('');
-      toast.success('Blueprint and GitHub repo created!');
+      toast.success('Automation and GitHub repo created!');
       onBlueprintCreated();
   
     } catch (error: any) {
-      toast.error(`Failed to create blueprint: ${error.message}`);
+      toast.error(`Failed to create automation: ${error.message}`);
     } finally {
       setIsCreating(false);
     }
@@ -63,13 +63,13 @@ export default function CreateBlueprintForm({ onBlueprintCreated }: CreateBluepr
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Create New Blueprint</CardTitle>
-        <CardDescription>Manually create a blueprint by pasting its JSON.</CardDescription>
+        <CardTitle>Create New Automation</CardTitle>
+        <CardDescription>Manually create an automation by pasting its JSON.</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleAddBlueprint} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="bp-name">Blueprint Name</Label>
+            <Label htmlFor="bp-name">Automation Name</Label>
             <Input
               id="bp-name"
               type="text"
@@ -83,7 +83,7 @@ export default function CreateBlueprintForm({ onBlueprintCreated }: CreateBluepr
             <Label htmlFor="bp-description">Description</Label>
             <Textarea
               id="bp-description"
-              placeholder="A brief description of what this blueprint does."
+              placeholder="A brief description of what this automation does."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
@@ -100,7 +100,7 @@ export default function CreateBlueprintForm({ onBlueprintCreated }: CreateBluepr
             />
           </div>
           <Button type="submit" disabled={isCreating}>
-            {isCreating ? 'Creating...' : 'Create Blueprint'}
+            {isCreating ? 'Creating...' : 'Create Automation'}
           </Button>
         </form>
       </CardContent>

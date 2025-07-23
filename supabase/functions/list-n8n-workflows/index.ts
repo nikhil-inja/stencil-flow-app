@@ -39,23 +39,30 @@ serve(async (req) => {
     // 3. Get the master n8n credentials from the organization record
     const { data: organization } = await supabaseAdmin
       .from('organizations')
-      .select('master_n8n_url, master_n8n_api_key')
+      .select('master_n8n_instance_id, n8n_instances!master_n8n_instance_id(instance_url, api_key)')
       .eq('id', profile.organization_id)
       .single();
 
-    if (!organization || !organization.master_n8n_url || !organization.master_n8n_api_key) {
+    const masterInstanceArr = organization?.n8n_instances;
+    const masterInstance = Array.isArray(masterInstanceArr) ? masterInstanceArr[0] : masterInstanceArr;
+    if (
+      !organization ||
+      !masterInstance ||
+      !masterInstance.instance_url ||
+      !masterInstance.api_key
+    ) {
       throw new Error("Master n8n credentials are not configured in settings.");
     }
 
     // 4. Call the user's n8n instance API to get the list of workflows
-    const cleanedUrl = organization.master_n8n_url.replace(/\/$/, "");
+    const cleanedUrl = masterInstance.instance_url.replace(/\/$/, "");
     const targetUrl = `${cleanedUrl}/api/v1/workflows`;
     
     const response = await fetch(targetUrl, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
-        'X-N8N-API-KEY': organization.master_n8n_api_key,
+        'X-N8N-API-KEY': masterInstance.api_key,
       },
     });
 

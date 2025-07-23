@@ -45,13 +45,13 @@ export default function BlueprintsManager() {
   };
   
   const handleDeleteBlueprint = async (blueprintId: string) => {
-    if (window.confirm('Are you sure you want to delete this blueprint?')) {
+    if (window.confirm('Are you sure you want to delete this automation?')) {
         const { error } = await supabase.from('blueprints').delete().eq('id', blueprintId);
         if (error) {
             toast.error(error.message);
         } else {
             setBlueprints(blueprints.filter((bp) => bp.id !== blueprintId));
-            toast.success('Blueprint deleted.');
+            toast.success('Automation deleted.');
         }
     }
   };
@@ -59,7 +59,7 @@ export default function BlueprintsManager() {
   const handleAddBlueprint = async (event: FormEvent) => {
     event.preventDefault();
     if (!name.trim()) {
-      toast.error('Blueprint name is required.');
+      toast.error('Automation name is required.');
       return;
     }
     setIsCreating(true);
@@ -67,7 +67,7 @@ export default function BlueprintsManager() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("User not logged in.");
-      if (!session.provider_token) throw new Error("You must be logged in with GitHub to create a blueprint.");
+      if (!session.provider_token) throw new Error("You must be logged in with GitHub to create an automation.");
   
       const { data: newBlueprint, error } = await supabase.functions.invoke('create-blueprint', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
@@ -85,10 +85,10 @@ export default function BlueprintsManager() {
       setName('');
       setDescription('');
       setWorkflowJson('');
-      toast.success('Blueprint and GitHub repo created!');
+      toast.success('Automation and GitHub repo created!');
   
     } catch (error: any) {
-      toast.error(`Failed to create blueprint: ${error.message}`);
+      toast.error(`Failed to create automation: ${error.message}`);
     } finally {
         setIsCreating(false);
     }
@@ -100,7 +100,7 @@ export default function BlueprintsManager() {
     <div className="space-y-6">
       <form onSubmit={handleAddBlueprint} className="space-y-4">
         <div className="grid w-full items-center gap-1.5">
-            <Label htmlFor="bp-name">Blueprint Name</Label>
+            <Label htmlFor="bp-name">Automation Name</Label>
             <Input
                 id="bp-name"
                 type="text"
@@ -114,7 +114,7 @@ export default function BlueprintsManager() {
             <Label htmlFor="bp-description">Description</Label>
             <Textarea
                 id="bp-description"
-                placeholder="A brief description of what this blueprint does."
+                placeholder="A brief description of what this automation does."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
             />
@@ -131,7 +131,7 @@ export default function BlueprintsManager() {
             />
         </div>
         <Button type="submit" disabled={isCreating}>
-          {isCreating ? 'Creating...' : 'Create Blueprint'}
+          {isCreating ? 'Creating...' : 'Create Automation'}
         </Button>
       </form>
 
@@ -158,9 +158,9 @@ export default function BlueprintsManager() {
             </ul>
         ) : (
             <div className="text-center p-8">
-                <h3 className="text-lg font-semibold">No Blueprints Found</h3>
+                <h3 className="text-lg font-semibold">No Automations Found</h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                    Create your first blueprint above or import one from n8n.
+                    Create your first automation above or import one from n8n.
                 </p>
             </div>
         )}

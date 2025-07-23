@@ -68,7 +68,10 @@ export default function ImportPage() {
       // Step 1: Get the full workflow details
       const { data: fullWorkflow, error: detailsError } = await supabase.functions.invoke('get-n8n-workflow-details', {
         headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { workflowId: workflow.id },
+        body: { 
+            workflowId: workflow.id,
+            githubToken: session.provider_token
+        },
       });
       if (detailsError) throw detailsError;
   
@@ -106,7 +109,7 @@ export default function ImportPage() {
           <CardHeader>
             <CardTitle>Your n8n Workflows</CardTitle>
             <CardDescription>
-              Select a workflow to import as a new Blueprint.
+              Select a workflow to import as a new Automation.
             </CardDescription>
           </CardHeader>
           <CardContent>

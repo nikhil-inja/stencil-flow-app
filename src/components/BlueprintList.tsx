@@ -38,19 +38,19 @@ export default function BlueprintList() {
       .eq('organization_id', profile.organization_id)
       .order('created_at', { ascending: false });
 
-    if (error) toast.error(`Failed to fetch blueprints: ${error.message}`);
+    if (error) toast.error(`Failed to fetch automations: ${error.message}`);
     else if (data) setBlueprints(data);
     setLoading(false);
   };
   
   const handleDeleteBlueprint = async (blueprintId: string) => {
-    if (window.confirm('Are you sure you want to delete this blueprint?')) {
+    if (window.confirm('Are you sure you want to delete this automation?')) {
         const { error } = await supabase.from('blueprints').delete().eq('id', blueprintId);
         if (error) {
             toast.error(error.message);
         } else {
             setBlueprints(blueprints.filter((bp) => bp.id !== blueprintId));
-            toast.success('Blueprint deleted.');
+            toast.success('Automation deleted.');
         }
     }
   };
@@ -58,7 +58,7 @@ export default function BlueprintList() {
   if (!profile) {
     return (
       <Card>
-        <CardHeader><CardTitle>Existing Blueprints</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Existing Automations</CardTitle></CardHeader>
         <CardContent><p>Loading user profile...</p></CardContent>
       </Card>
     );
@@ -69,8 +69,8 @@ export default function BlueprintList() {
       <CardHeader>
         <div className="flex justify-between items-center">
             <div>
-                <CardTitle>Existing Blueprints</CardTitle>
-                <CardDescription>Manage your saved workflow templates.</CardDescription>
+                <CardTitle>Existing Automations</CardTitle>
+                <CardDescription>Manage your saved automation templates.</CardDescription>
             </div>
             <Button asChild>
                 <Link to="/import/n8n">
@@ -80,7 +80,7 @@ export default function BlueprintList() {
         </div>
       </CardHeader>
       <CardContent>
-        {loading ? <p>Loading blueprints...</p> : (
+        {loading ? <p>Loading automations...</p> : (
           blueprints.length > 0 ? (
             <ul className="divide-y border rounded-md">
             {blueprints.map((bp) => (
@@ -102,9 +102,9 @@ export default function BlueprintList() {
             </ul>
           ) : (
             <div className="text-center p-8 border rounded-lg">
-              <h3 className="text-lg font-semibold">No Blueprints Found</h3>
+              <h3 className="text-lg font-semibold">No Automations Found</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Create your first blueprint on the right or import one from n8n.
+                Create your first automation on the right or import one from n8n.
               </p>
             </div>
           )

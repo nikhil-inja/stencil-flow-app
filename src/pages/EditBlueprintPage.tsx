@@ -171,7 +171,7 @@ export default function EditBlueprintPage() {
 };
 
 
-  if (loading) return <div className="flex h-screen items-center justify-center">Loading Blueprint...</div>;
+  if (loading) return <div className="flex h-screen items-center justify-center">Loading Automation...</div>;
 
   return (
     <div className="container mx-auto p-4 sm:p-6 md:p-8">
@@ -179,7 +179,7 @@ export default function EditBlueprintPage() {
         <Button asChild variant="ghost" className="mb-2 -ml-4">
           <Link to="/">&larr; Back to Dashboard</Link>
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight">Edit Blueprint</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Edit Automation</h1>
       </header>
 
       <main className="grid md:grid-cols-3 gap-8">
@@ -220,7 +220,7 @@ export default function EditBlueprintPage() {
           <Card>
             <CardHeader>
               <CardTitle>Version History</CardTitle>
-              <CardDescription>Past versions of this blueprint.</CardDescription>
+              <CardDescription>Past versions of this automation.</CardDescription>
             </CardHeader>
             <CardContent>
               <ul className="space-y-4">

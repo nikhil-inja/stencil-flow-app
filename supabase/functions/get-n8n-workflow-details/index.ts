@@ -1,8 +1,7 @@
-// supabase/functions/sync-blueprint-from-n8n/index.ts
+// supabase/functions/get-n8n-workflow-details/index.ts
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,79 +23,44 @@ serve(async (req) => {
     const { data: { user } } = await supabaseUserClient.auth.getUser();
     if (!user) throw new Error("User not authenticated.");
 
-    // 2. Get blueprintId and githubToken from request body
-    const { blueprintId, githubToken } = await req.json();
-    if (!blueprintId || !githubToken) {
-      throw new Error("Missing blueprintId or githubToken.");
-    }
-    
-    // 3. Get blueprint and organization details
+    // 2. Get the workflow ID from the request body
+    const { workflowId } = await req.json();
+    if (!workflowId) throw new Error("Workflow ID is required.");
+
+    // 3. Get the user's organization and master n8n credentials
     const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
-    const { data: blueprintData } = await supabaseAdmin
-      .from('blueprints')
-      .select(`
-        git_repository,
-        workflow_json,
-        organization:organizations (master_n8n_url, master_n8n_api_key)
-      `)
-      .eq('id', blueprintId)
-      .single();
+    const { data: profile } = await supabaseAdmin.from('profiles').select('organization_id').eq('id', user.id).single();
+    if (!profile) throw new Error("Could not find user profile.");
 
-    if (!blueprintData) throw new Error("Blueprint not found.");
-    const { git_repository, workflow_json, organization } = blueprintData as any;
-    if (!organization?.master_n8n_url || !organization?.master_n8n_api_key) {
-      throw new Error("Master n8n credentials are not configured in settings.");
+    const { data: organization } = await supabaseAdmin.from('organizations').select('n8n_instances (instance_url, api_key)').eq('id', profile.organization_id).single();
+    if (!organization?.n8n_instances || organization?.n8n_instances?.length === 0) {
+        throw new Error("No n8n instances configured in settings.");
     }
 
-    const n8nWorkflowId = (workflow_json as any)?.id;
-    if (!n8nWorkflowId) throw new Error("Could not find source n8n workflow ID in blueprint.");
+    // 4. Call the n8n API to get the full details for the specific workflow
+    // organization.n8n_instances is an array, so use the first instance
+    const n8nInstance = Array.isArray(organization.n8n_instances)
+      ? organization.n8n_instances[0]
+      : organization.n8n_instances;
 
-    // 4. Fetch the LATEST version from the user's master n8n instance
-    const cleanedUrl = organization.master_n8n_url.replace(/\/$/, "");
-    const targetUrl = `${cleanedUrl}/api/v1/workflows/${n8nWorkflowId}`;
-    const n8nResponse = await fetch(targetUrl, {
-      headers: { 'X-N8N-API-KEY': organization.master_n8n_api_key },
-    });
-    if (!n8nResponse.ok) throw new Error("Could not fetch latest workflow from your n8n instance.");
-    const newWorkflowJson = await n8nResponse.json();
+    const cleanedUrl = n8nInstance.instance_url.replace(/\/$/, "");
+    const targetUrl = `${cleanedUrl}/api/v1/workflows/${workflowId}`;
 
-    // 5. Commit the updated workflow to the GitHub repository
-    const repoPath = new URL(git_repository).pathname.substring(1);
-    const filePath = `repos/${repoPath}/contents/workflow.json`;
-
-    const getFileResponse = await fetch(`https://api.github.com/${filePath}`, {
-      headers: { 'Authorization': `token ${githubToken}` },
-    });
-    if (!getFileResponse.ok) throw new Error("Could not find workflow file in GitHub repo to update.");
-    const fileData = await getFileResponse.json();
-    const currentSha = fileData.sha;
-
-    const contentEncoded = encode(new TextEncoder().encode(JSON.stringify(newWorkflowJson, null, 2)));
-
-    await fetch(`https://api.github.com/${filePath}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `token ${githubToken}`,
-        'Accept': 'application/vnd.github.v3+json',
-      },
-      body: JSON.stringify({
-        message: 'Sync update from master n8n instance',
-        content: contentEncoded,
-        sha: currentSha,
-      }),
+    const response = await fetch(targetUrl, {
+      headers: { 'X-N8N-API-KEY': n8nInstance.api_key },
     });
 
-    // 6. Update the workflow_json in our own database
-    await supabaseAdmin
-      .from('blueprints')
-      .update({ workflow_json: newWorkflowJson })
-      .eq('id', blueprintId);
+    if (!response.ok) {
+      throw new Error(`n8n API Error (Status ${response.status})`);
+    }
 
-    return new Response(JSON.stringify({ message: 'Blueprint synced successfully!' }), {
+    const workflowDetails = await response.json();
+
+    // 5. Return the full workflow object
+    return new Response(JSON.stringify(workflowDetails), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

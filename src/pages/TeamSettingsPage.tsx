@@ -47,16 +47,16 @@ export default function TeamSettingsPage() {
         // Fetch Org Settings
         const { data: orgData, error: orgError } = await supabase
           .from('organizations')
-          .select('master_n8n_url')
+          .select('n8n_instances(instance_url)')
           .eq('id', profile.organization_id)
           .single();
   
         if (orgError && orgError.code !== 'PGRST116') {
           toast.error("Could not load organization settings.");
-        } else if (orgData) {
-          setMasterUrl(orgData.master_n8n_url || '');
+        } else if (orgData && orgData.n8n_instances && Array.isArray(orgData.n8n_instances) && orgData.n8n_instances[0]) {
+          setMasterUrl(orgData.n8n_instances[0].instance_url || '');
         }
-  
+
         // Fetch Team Members using our new database function
         const { data: membersData, error: membersError } = await supabase
           .rpc('get_team_members', { org_id: profile.organization_id });
@@ -122,27 +122,22 @@ export default function TeamSettingsPage() {
     event.preventDefault();
     if (!profile) return;
     setIsSavingMasterCreds(true);
-
-    // Only include the API key in the update if it's not empty
-    const updateData: { master_n8n_url: string; master_n8n_api_key?: string } = {
-      master_n8n_url: masterUrl,
-    };
-    if (masterApiKey) {
-      updateData.master_n8n_api_key = masterApiKey;
+  
+    try {
+      const { error } = await supabase.rpc('upsert_and_link_master_instance', {
+        p_organization_id: profile.organization_id,
+        p_instance_url: masterUrl,
+        p_api_key: masterApiKey
+      });
+  
+      if (error) throw error;
+      
+      toast.success('Master n8n instance saved!');
+    } catch (error: any) {
+      toast.error(`Failed to save credentials: ${error.message}`);
+    } finally {
+      setIsSavingMasterCreds(false);
     }
-
-    const { error } = await supabase
-      .from('organizations')
-      .update(updateData)
-      .eq('id', profile.organization_id);
-
-    if (error) {
-      toast.error('Failed to save credentials: ' + error.message);
-    } else {
-      toast.success('Master n8n credentials saved!');
-      setMasterApiKey(''); // Clear the API key field after saving
-    }
-    setIsSavingMasterCreds(false);
   };
 
   const handleConnectGitHub = async () => {
@@ -183,7 +178,7 @@ export default function TeamSettingsPage() {
       <Card>
           <CardHeader>
             <CardTitle>GitHub Connection</CardTitle>
-            <CardDescription>Connect your GitHub account to enable version control for blueprints.</CardDescription>
+            <CardDescription>Connect your GitHub account to enable version control for automations.</CardDescription>
           </CardHeader>
           <CardContent>
             {isConnecting ? <p>Checking status...</p> : (
@@ -198,7 +193,7 @@ export default function TeamSettingsPage() {
                             <AlertDialogHeader>
                                 <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                    Disconnecting your GitHub account will prevent you from creating or updating blueprints. You can reconnect at any time.
+                                    Disconnecting your GitHub account will prevent you from creating or updating automations. You can reconnect at any time.
                                 </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -219,7 +214,7 @@ export default function TeamSettingsPage() {
           <CardHeader>
             <CardTitle>My n8n Instance</CardTitle>
             <CardDescription>
-              Connect to your own n8n instance to enable direct blueprint imports.
+              Connect to your own n8n instance to enable direct automation imports.
             </CardDescription>
           </CardHeader>
           <CardContent>

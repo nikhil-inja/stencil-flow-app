@@ -16,7 +16,7 @@ export default function SharedLayout() {
 
   const navItems = [
     { to: '/', label: 'Dashboard', icon: Home },
-    { to: '/blueprints', label: 'Blueprints', icon: FileText },
+    { to: '/blueprints', label: 'Automations', icon: FileText },
     { to: '/clients', label: 'Clients', icon: Users },
     { to: '/settings/team', label: 'Settings', icon: Settings },
   ];

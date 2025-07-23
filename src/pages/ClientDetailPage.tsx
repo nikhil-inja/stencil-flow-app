@@ -120,7 +120,7 @@ export default function ClientDetailPage() {
     event.preventDefault();
     if (!profile || !clientId) return;
     setIsSaving(true);
-    const { error } = await supabase.from('n8n_instances').upsert({ client_id: clientId, instance_url: instanceUrl, api_key: apiKey }, { onConflict: 'client_id' });
+    const { error } = await supabase.from('n8n_instances').upsert({ client_id: clientId, instance_url: instanceUrl, api_key: apiKey, organization_id: profile.organization_id }, { onConflict: 'client_id' });
     if (error) {
       toast.error('Error saving instance: ' + error.message);
     } else {
@@ -266,7 +266,7 @@ export default function ClientDetailPage() {
                             return (
                                 <li key={dep.id} className="flex items-center justify-between p-3">
                                 <div>
-                                    <p className="font-medium">{blueprintInfo?.name || 'Unknown Blueprint'}</p>
+                                    <p className="font-medium">{blueprintInfo?.name || 'Unknown Automation'}</p>
                                     <p className={`text-xs font-semibold ${statusColor}`}>{statusText}</p>
                                 </div>
                                 <div className="flex items-center gap-4">
@@ -299,13 +299,13 @@ export default function ClientDetailPage() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Available Blueprints</CardTitle>
-                    <CardDescription>Deploy new workflows to this client.</CardDescription>
+                    <CardTitle>Available Automations</CardTitle>
+                    <CardDescription>Deploy new automations to this client.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     {!instance ? (
                         <div className="text-center p-8 text-sm text-muted-foreground">
-                            Please connect to the client's n8n instance to deploy blueprints.
+                            Please connect to the client's n8n instance to deploy automations.
                         </div>
                     ) : (
                         <div className="border rounded-md">
@@ -317,7 +317,7 @@ export default function ClientDetailPage() {
                                   {deployingId === bp.id ? 'Deploying...' : 'Deploy'}
                                 </Button>
                             </li>
-                            )) : <p className="p-4 text-sm text-muted-foreground text-center">No new blueprints available to deploy.</p>}
+                            )) : <p className="p-4 text-sm text-muted-foreground text-center">No new automations available to deploy.</p>}
                         </ul>
                         </div>
                     )}

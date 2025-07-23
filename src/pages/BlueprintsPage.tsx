@@ -44,7 +44,7 @@ export default function BlueprintsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">Blueprints</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Automations</h1>
       </div>
       
       {/* GitHub Connection Card remains the same */}
@@ -54,7 +54,7 @@ export default function BlueprintsPage() {
             <CardDescription>
             {isGitHubConnected 
                 ? "Your account is connected to GitHub. If you experience issues, you can refresh the connection."
-                : "Connect your GitHub account to enable version control for blueprints."
+                : "Connect your GitHub account to enable version control for automations."
             }
             </CardDescription>
         </CardHeader>
@@ -70,12 +70,12 @@ export default function BlueprintsPage() {
       {/* New Side-by-Side Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* Left Column: Existing Blueprints */}
+        {/* Left Column: Existing Automations */}
         <div className="flex flex-col gap-4">
             <BlueprintList key={refreshKey} />
         </div>
 
-        {/* Right Column: Create New Blueprint */}
+        {/* Right Column: Create New Automation */}
         <div className="flex flex-col gap-4">
             <CreateBlueprintForm onBlueprintCreated={() => setRefreshKey(prev => prev + 1)} />
         </div>
