@@ -1,69 +1,49 @@
-# React + TypeScript + Vite
+Stencil Flow App: A Unified Automation Manager
+Overview
+The Stencil Flow App is a full-stack web application designed to address a critical challenge for automation agencies and freelancers: managing multiple workflows across different no-code platforms. This tool provides a centralized dashboard to import, sync, and deploy automations, transforming a tedious manual process into a streamlined, version-controlled workflow. It acts as a single source of truth for all automations, giving agencies a powerful platform to manage client projects efficiently.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Features (Current)
+Multi-Account Management: Connect and manage multiple n8n accounts from a single, intuitive dashboard.
 
-Currently, two official plugins are available:
+Workflow Synchronization: Seamlessly import and sync workflows from any connected n8n instance.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Git-Based Version Control: All workflows are stored and versioned in a central Git repository, providing a clear history of changes and a secure backup.
 
-## Expanding the ESLint configuration
+One-Click Deployment: Deploy synced workflows to any connected n8n instance with a single click, dramatically reducing manual setup and configuration time.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Architectural Highlights
+The application is built on a modern, scalable, and secure architecture designed for performance and reliability.
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+Frontend: The user interface is built with React and styled with Tailwind CSS, providing a fast, responsive, and visually appealing experience.
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
+Backend & APIs: The backend logic is powered by Supabase Edge Functions (built with Deno and TypeScript), offering a secure and performant API layer.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Database: A Supabase PostgreSQL database serves as the persistent data layer, handling user authentication and storing metadata about workflows.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Source of Truth: A dedicated GitHub repository is the central source of truth, storing all workflows and their version history.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Getting Started
+To get this project running, follow these simple steps.
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Clone the Repository:
+
+git clone https://github.com/nikhil-inja/stencil-flow-app.git
+cd stencil-flow-app
+
+Set Up Supabase:
+
+Create a new project in your Supabase account.
+
+Navigate to supabase/functions and deploy the included Deno Edge Functions using the Supabase CLI.
+
+Set up your Supabase database tables as outlined in the included SQL scripts.
+
+Run the Application:
+
+# Install dependencies
+npm install
+
+# Start the local development server
+npm run dev
+
+The application will be running on http://localhost:5173. You can now create credentials in the database and connect your n8n instances and explore the features.
