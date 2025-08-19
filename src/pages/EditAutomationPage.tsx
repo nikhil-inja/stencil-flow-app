@@ -1,4 +1,4 @@
-// src/pages/EditBlueprintPage.tsx
+// src/pages/EditAutomationPage.tsx
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
@@ -20,8 +20,8 @@ interface Commit {
   date: string;
 }
 
-export default function EditBlueprintPage() {
-  const { blueprintId } = useParams<{ blueprintId: string }>();
+export default function EditAutomationPage() {
+  const { automationId } = useParams<{ automationId: string }>();
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [rollingBackSha, setRollingBackSha] = useState<string | null>(null);
@@ -35,22 +35,22 @@ export default function EditBlueprintPage() {
 
   // We will define this as a standalone function to reuse it
   const fetchAllData = async () => {
-    if (!blueprintId) return;
+    if (!automationId) return;
     setLoading(true);
     
     try {
-      const { data: blueprintData, error: blueprintError } = await supabase
-        .from('blueprints')
+      const { data: automationData, error: automationError } = await supabase
+        .from('automations')
         .select('name, description, workflow_json')
-        .eq('id', blueprintId)
+        .eq('id', automationId)
         .single();
 
-      if (blueprintError) throw blueprintError;
+      if (automationError) throw automationError;
       
-      if (blueprintData) {
-        setName(blueprintData.name);
-        setDescription(blueprintData.description || '');
-        setWorkflowJson(JSON.stringify(blueprintData.workflow_json, null, 2));
+      if (automationData) {
+        setName(automationData.name);
+        setDescription(automationData.description || '');
+        setWorkflowJson(JSON.stringify(automationData.workflow_json, null, 2));
       }
 
       const { data: { session } } = await supabase.auth.getSession();
@@ -58,7 +58,7 @@ export default function EditBlueprintPage() {
         const { data: commitHistory, error: historyError } = await supabase.functions.invoke('get-commit-history', {
           headers: { 'Authorization': `Bearer ${session.access_token}` },
           body: { 
-            blueprintId,
+            automationId,
             githubToken: session.provider_token // Ensure this is being sent
           }, 
         });
@@ -74,7 +74,7 @@ export default function EditBlueprintPage() {
 
   useEffect(() => {
     fetchAllData();
-  }, [blueprintId]);
+  }, [automationId]);
   
   const handleSaveChanges = async (event: FormEvent) => {
     event.preventDefault();
@@ -93,10 +93,10 @@ export default function EditBlueprintPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("You must be logged in.");
   
-      const { error } = await supabase.functions.invoke('update-blueprint', {
+      const { error } = await supabase.functions.invoke('update-automation', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
         body: {
-          blueprintId,
+          automationId,
           description,
           workflowJson: parsedJson,
           // The githubToken is no longer needed here
@@ -104,7 +104,7 @@ export default function EditBlueprintPage() {
       });
   
       if (error) throw error;
-      toast.success('Blueprint updated successfully!');
+      toast.success('Automation updated successfully!');
       fetchAllData();
   
     } catch (error: any) {
@@ -123,10 +123,10 @@ export default function EditBlueprintPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("You must be logged in.");
   
-      const { error } = await supabase.functions.invoke('rollback-blueprint', {
+      const { error } = await supabase.functions.invoke('rollback-automation', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
         body: {
-          blueprintId,
+          automationId,
           commitSha,
           // The githubToken is no longer needed here
         },
@@ -152,10 +152,10 @@ export default function EditBlueprintPage() {
           throw new Error("You must be logged in via GitHub to sync.");
         }
 
-        const { data, error } = await supabase.functions.invoke('sync-blueprint-from-n8n', {
+        const { data, error } = await supabase.functions.invoke('sync-automation-from-n8n', {
             headers: { Authorization: `Bearer ${session.access_token}` },
             body: { 
-                blueprintId,
+                automationId,
                 githubToken: session.provider_token // <-- This was missing
             },
         });

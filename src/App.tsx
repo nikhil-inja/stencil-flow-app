@@ -8,10 +8,10 @@ import SharedLayout from './components/SharedLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
-import BlueprintsPage from './pages/BlueprintsPage';
+import AutomationsPage from './pages/AutomationsPage';
 import ClientsPage from './pages/ClientsPage';
 import ClientDetailPage from './pages/ClientDetailPage';
-import EditBlueprintPage from './pages/EditBlueprintPage';
+import EditAutomationPage from './pages/EditAutomationPage';
 import TeamSettingsPage from './pages/TeamSettingsPage';
 import ImportPage from './pages/ImportPage';
 import AcceptInvitePage from './pages/AcceptInvitePage';
@@ -30,10 +30,10 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<SharedLayout />}>
               <Route path="/" element={<DashboardPage />} />
-              <Route path="/blueprints" element={<BlueprintsPage />} />
+              <Route path="/automations" element={<AutomationsPage />} />
               <Route path="/clients" element={<ClientsPage />} />
               <Route path="/client/:clientId" element={<ClientDetailPage />} />
-              <Route path="/blueprint/:blueprintId/edit" element={<EditBlueprintPage />} />
+              <Route path="/automation/:automationId/edit" element={<EditAutomationPage />} />
               <Route path="/settings/team" element={<TeamSettingsPage />} />
               <Route path="/import/n8n" element={<ImportPage />} />
               <Route path="/github-callback" element={<GitHubCallbackPage />} />

@@ -1,4 +1,4 @@
-// supabase/functions/sync-blueprint-from-n8n/index.ts
+// supabase/functions/sync-automation-from-n8n/index.ts
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -24,35 +24,35 @@ serve(async (req) => {
     const { data: { user } } = await supabaseUserClient.auth.getUser();
     if (!user) throw new Error("User not authenticated.");
 
-    // 2. Get blueprintId and githubToken from request body
-    const { blueprintId, githubToken } = await req.json();
-    if (!blueprintId || !githubToken) {
-      throw new Error("Missing blueprintId or githubToken.");
+    // 2. Get automationId and githubToken from request body
+    const { automationId, githubToken } = await req.json();
+    if (!automationId || !githubToken) {
+      throw new Error("Missing automationId or githubToken.");
     }
     
-    // 3. Get blueprint and organization details
+    // 3. Get automation and organization details
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
-    const { data: blueprintData } = await supabaseAdmin
-      .from('blueprints')
+    const { data: automationData } = await supabaseAdmin
+      .from('automations')
       .select(`
         git_repository,
         workflow_json,
         organization:organizations (master_n8n_url, master_n8n_api_key)
       `)
-      .eq('id', blueprintId)
+      .eq('id', automationId)
       .single();
 
-    if (!blueprintData) throw new Error("Blueprint not found.");
-    const { git_repository, workflow_json, organization } = blueprintData as any;
+    if (!automationData) throw new Error("Automation not found.");
+    const { git_repository, workflow_json, organization } = automationData as any;
     if (!organization?.master_n8n_url || !organization?.master_n8n_api_key) {
       throw new Error("Master n8n credentials are not configured in settings.");
     }
 
     const n8nWorkflowId = (workflow_json as any)?.id;
-    if (!n8nWorkflowId) throw new Error("Could not find source n8n workflow ID in blueprint.");
+    if (!n8nWorkflowId) throw new Error("Could not find source n8n workflow ID in automation.");
 
     // 4. Fetch the LATEST version from the user's master n8n instance
     const cleanedUrl = organization.master_n8n_url.replace(/\/$/, "");
@@ -92,11 +92,11 @@ serve(async (req) => {
 
     // 6. Update the workflow_json in our own database
     await supabaseAdmin
-      .from('blueprints')
+      .from('automations')
       .update({ workflow_json: newWorkflowJson })
-      .eq('id', blueprintId);
+      .eq('id', automationId);
 
-    return new Response(JSON.stringify({ message: 'Blueprint synced successfully!' }), {
+    return new Response(JSON.stringify({ message: 'Automation synced successfully!' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

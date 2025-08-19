@@ -1,4 +1,4 @@
-// supabase/functions/create-blueprint/index.ts
+// supabase/functions/create-automation/index.ts
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -62,7 +62,7 @@ serve(async (req) => {
     const owner = repoData.owner.login;
     const repo = repoData.name;
     const path = 'workflow.json';
-    const contentEncoded = encode(new TextEncoder().encode(JSON.stringify(parsedWorkflowJson, null, 2)));
+    const contentEncoded = encode(JSON.stringify(parsedWorkflowJson, null, 2));
 
     await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
         method: 'PUT',
@@ -74,13 +74,13 @@ serve(async (req) => {
     const { data: profile } = await supabaseAdmin.from('profiles').select('organization_id').eq('id', user.id).single();
     if (!profile) throw new Error("Could not find user profile.");
     
-    const { data: newBlueprint, error: dbError } = await supabaseAdmin
-      .from('blueprints')
+    const { data: newAutomation, error: dbError } = await supabaseAdmin
+      .from('automations')
       .insert({ name, description, organization_id: profile.organization_id, git_repository: repoData.html_url, workflow_json: parsedWorkflowJson })
       .select('id, name, description').single();
     if (dbError) throw dbError;
 
-    return new Response(JSON.stringify(newBlueprint), {
+    return new Response(JSON.stringify(newAutomation), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,
     });
   } catch (error) {

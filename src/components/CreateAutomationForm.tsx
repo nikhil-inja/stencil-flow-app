@@ -1,4 +1,4 @@
-// src/components/CreateBlueprintForm.tsx
+// src/components/CreateAutomationForm.tsx
 
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../supabaseClient';
@@ -10,17 +10,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-type CreateBlueprintFormProps = {
-  onBlueprintCreated: () => void;
+type CreateAutomationFormProps = {
+  onAutomationCreated: () => void;
 };
 
-export default function CreateBlueprintForm({ onBlueprintCreated }: CreateBlueprintFormProps) {
+export default function CreateAutomationForm({ onAutomationCreated }: CreateAutomationFormProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [workflowJson, setWorkflowJson] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  const handleAddBlueprint = async (event: FormEvent) => {
+  const handleAddAutomation = async (event: FormEvent) => {
     event.preventDefault();
     if (!name.trim()) {
       toast.error('Automation name is required.');
@@ -33,8 +33,8 @@ export default function CreateBlueprintForm({ onBlueprintCreated }: CreateBluepr
       if (!session) throw new Error("User not logged in.");
       if (!session.provider_token) throw new Error("You must be logged in with GitHub to create an automation.");
   
-      // NOTE: The function now returns the full blueprint object, not just a partial one.
-      const { error } = await supabase.functions.invoke('create-blueprint', {
+      // NOTE: The function now returns the full automation object, not just a partial one.
+      const { error } = await supabase.functions.invoke('create-automation', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
         body: { 
           name, 
@@ -51,7 +51,7 @@ export default function CreateBlueprintForm({ onBlueprintCreated }: CreateBluepr
       setDescription('');
       setWorkflowJson('');
       toast.success('Automation and GitHub repo created!');
-      onBlueprintCreated();
+      onAutomationCreated();
   
     } catch (error: any) {
       toast.error(`Failed to create automation: ${error.message}`);
@@ -67,7 +67,7 @@ export default function CreateBlueprintForm({ onBlueprintCreated }: CreateBluepr
         <CardDescription>Manually create an automation by pasting its JSON.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleAddBlueprint} className="space-y-4">
+        <form onSubmit={handleAddAutomation} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="bp-name">Automation Name</Label>
             <Input

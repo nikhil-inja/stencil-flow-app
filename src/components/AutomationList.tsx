@@ -1,4 +1,4 @@
-// src/components/BlueprintList.tsx
+// src/components/AutomationList.tsx
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
@@ -10,46 +10,46 @@ import { PlusCircle } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-interface Blueprint {
+interface Automation {
   id: string;
   name: string;
   description: string | null;
 }
 
-export default function BlueprintList() {
+export default function AutomationList() {
   const { profile } = useSession();
-  const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
+  const [automations, setAutomations] = useState<Automation[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (profile) {
-      fetchBlueprints();
+      fetchAutomations();
     } else {
       setLoading(false);
     }
   }, [profile]);
 
-  const fetchBlueprints = async () => {
+  const fetchAutomations = async () => {
     if (!profile) return;
     setLoading(true);
     const { data, error } = await supabase
-      .from('blueprints')
+      .from('automations')
       .select('id, name, description')
       .eq('organization_id', profile.organization_id)
       .order('created_at', { ascending: false });
 
     if (error) toast.error(`Failed to fetch automations: ${error.message}`);
-    else if (data) setBlueprints(data);
+    else if (data) setAutomations(data);
     setLoading(false);
   };
   
-  const handleDeleteBlueprint = async (blueprintId: string) => {
+  const handleDeleteAutomation = async (automationId: string) => {
     if (window.confirm('Are you sure you want to delete this automation?')) {
-        const { error } = await supabase.from('blueprints').delete().eq('id', blueprintId);
+        const { error } = await supabase.from('automations').delete().eq('id', automationId);
         if (error) {
             toast.error(error.message);
         } else {
-            setBlueprints(blueprints.filter((bp) => bp.id !== blueprintId));
+            setAutomations(automations.filter((auto) => auto.id !== automationId));
             toast.success('Automation deleted.');
         }
     }
@@ -81,19 +81,19 @@ export default function BlueprintList() {
       </CardHeader>
       <CardContent>
         {loading ? <p>Loading automations...</p> : (
-          blueprints.length > 0 ? (
+          automations.length > 0 ? (
             <ul className="divide-y border rounded-md">
-            {blueprints.map((bp) => (
-              <li key={bp.id} className="flex items-center justify-between p-3">
+            {automations.map((auto) => (
+              <li key={auto.id} className="flex items-center justify-between p-3">
                 <div>
-                  <p className="font-medium">{bp.name}</p>
-                  <p className="text-sm text-muted-foreground">{bp.description || 'No description.'}</p>
+                  <p className="font-medium">{auto.name}</p>
+                  <p className="text-sm text-muted-foreground">{auto.description || 'No description.'}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button asChild variant="outline" size="sm">
-                    <Link to={`/blueprint/${bp.id}/edit`}>Edit</Link>
+                    <Link to={`/automation/${auto.id}/edit`}>Edit</Link>
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => handleDeleteBlueprint(bp.id)}>
+                  <Button variant="ghost" size="sm" onClick={() => handleDeleteAutomation(auto.id)}>
                     Delete
                   </Button>
                 </div>

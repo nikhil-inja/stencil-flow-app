@@ -1,19 +1,19 @@
-// src/pages/BlueprintsPage.tsx
+// src/pages/AutomationsPage.tsx
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEffect, useState } from "react";
 import { supabase } from "@/supabaseClient";
 import toast from "react-hot-toast";
-import BlueprintList from "@/components/BlueprintList";
-import CreateBlueprintForm from "@/components/CreateBlueprintForm";
+import AutomationList from "@/components/AutomationList";
+import CreateAutomationForm from "@/components/CreateAutomationForm";
 // import { PlusCircle } from "lucide-react";
 
-export default function BlueprintsPage() {
+export default function AutomationsPage() {
   const [isGitHubConnected, setIsGitHubConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   
-  // State to refresh the list after a new blueprint is created
+  // State to refresh the list after a new automation is created
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -72,12 +72,12 @@ export default function BlueprintsPage() {
         
         {/* Left Column: Existing Automations */}
         <div className="flex flex-col gap-4">
-            <BlueprintList key={refreshKey} />
+            <AutomationList key={refreshKey} />
         </div>
 
         {/* Right Column: Create New Automation */}
         <div className="flex flex-col gap-4">
-            <CreateBlueprintForm onBlueprintCreated={() => setRefreshKey(prev => prev + 1)} />
+            <CreateAutomationForm onAutomationCreated={() => setRefreshKey(prev => prev + 1)} />
         </div>
 
       </div>

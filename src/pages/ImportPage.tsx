@@ -75,8 +75,8 @@ export default function ImportPage() {
       });
       if (detailsError) throw detailsError;
   
-      // Step 2: Call the create-blueprint function with the full data
-      const { error: createError } = await supabase.functions.invoke('create-blueprint', {
+      // Step 2: Call the create-automation function with the full data
+      const { error: createError } = await supabase.functions.invoke('create-automation', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
         body: {
           name: fullWorkflow.name,

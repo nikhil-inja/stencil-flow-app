@@ -1,4 +1,4 @@
-// supabase/functions/deploy-blueprint/index.ts
+// supabase/functions/deploy-automation/index.ts
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -24,17 +24,17 @@ serve(async (req) => {
     if (!user) throw new Error("User not authenticated.");
 
     // 2. Get data from the request body
-    const { blueprintId, clientId, githubToken } = await req.json();
-    if (!blueprintId || !clientId || !githubToken) throw new Error("Missing blueprintId, clientId, or githubToken.");
+    const { automationId, clientId, githubToken } = await req.json();
+    if (!automationId || !clientId || !githubToken) throw new Error("Missing automationId, clientId, or githubToken.");
 
-    // 3. Get blueprint, client, and n8n instance details
+    // 3. Get automation, client, and n8n instance details
     const supabaseAdmin = createClient(
         Deno.env.get('SUPABASE_URL') ?? '',
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
       );
     
-    const { data: blueprint } = await supabaseAdmin.from('blueprints').select('name, workflow_json, git_repository').eq('id', blueprintId).single();
-    if (!blueprint) throw new Error("Blueprint not found.");
+    const { data: automation } = await supabaseAdmin.from('automations').select('name, workflow_json, git_repository').eq('id', automationId).single();
+    if (!automation) throw new Error("Automation not found.");
 
     // Fetch the client's name along with the instance details
     const { data: client } = await supabaseAdmin.from('clients').select('name, n8n_instances(instance_url, api_key)').eq('id', clientId).single();
@@ -42,9 +42,9 @@ serve(async (req) => {
     if (!instance || !client) throw new Error("n8n instance details or client name not found.");
 
     // 4. Sanitize the workflow JSON
-    const userWorkflow = blueprint.workflow_json as any;
+    const userWorkflow = automation.workflow_json as any;
     const workflowToDeploy = {
-        name: blueprint.name,
+        name: automation.name,
         nodes: userWorkflow.nodes,
         connections: userWorkflow.connections || {},
         settings: userWorkflow.settings || {},
@@ -77,7 +77,7 @@ serve(async (req) => {
     const n8nWorkflowId = n8nWorkflowData.id;
 
     // 6. Get latest commit SHA from the main branch
-    const repoPath = new URL(blueprint.git_repository).pathname.substring(1);
+    const repoPath = new URL(automation.git_repository).pathname.substring(1);
     const mainBranchInfo = await fetch(`https://api.github.com/repos/${repoPath}/branches/main`, {
       headers: { 'Authorization': `token ${githubToken}` },
     });
@@ -89,11 +89,11 @@ serve(async (req) => {
     const { data: newDeployment, error: deploymentError } = await supabaseAdmin
       .from('deployments')
       .upsert({
-        blueprint_id: blueprintId,
+        automation_id: automationId,
         client_id: clientId,
         n8n_workflow_id: n8nWorkflowId,
         deployed_commit_sha: mainBranchSha,
-      }, { onConflict: 'blueprint_id, client_id' })
+      }, { onConflict: 'automation_id, client_id' })
       .select('id')
       .single();
 
@@ -117,7 +117,7 @@ serve(async (req) => {
       .update({ git_branch: clientBranchName })
       .eq('id', newDeployment.id);
 
-    return new Response(JSON.stringify({ message: `Successfully deployed '${blueprint.name}'!` }), {
+    return new Response(JSON.stringify({ message: `Successfully deployed '${automation.name}'!` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

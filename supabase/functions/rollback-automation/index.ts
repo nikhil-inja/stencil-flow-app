@@ -1,4 +1,4 @@
-// supabase/functions/rollback-blueprint/index.ts
+// supabase/functions/rollback-automation/index.ts
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -21,17 +21,17 @@ serve(async (req) => {
     const { data: { user } } = await supabaseUserClient.auth.getUser();
     if (!user) throw new Error("User not authenticated.");
 
-    const { blueprintId, commitSha, githubToken } = await req.json();
-    if (!blueprintId || !commitSha || !githubToken) {
+    const { automationId, commitSha, githubToken } = await req.json();
+    if (!automationId || !commitSha || !githubToken) {
       throw new Error("Missing required parameters.");
     }
 
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     
-    const { data: blueprint } = await supabaseAdmin.from('blueprints').select('git_repository').eq('id', blueprintId).single();
-    if (!blueprint) throw new Error("Blueprint not found.");
+    const { data: automation } = await supabaseAdmin.from('automations').select('git_repository').eq('id', automationId).single();
+    if (!automation) throw new Error("Automation not found.");
     
-    const repoPath = new URL(blueprint.git_repository).pathname.substring(1);
+    const repoPath = new URL(automation.git_repository).pathname.substring(1);
     const filePath = `repos/${repoPath}/contents/workflow.json`;
 
     const oldFileResponse = await fetch(`https://api.github.com/${filePath}?ref=${commitSha}`, { headers: { 'Authorization': `token ${githubToken}` } });
@@ -51,7 +51,7 @@ serve(async (req) => {
       body: JSON.stringify({ message: `Rollback to version ${commitSha.substring(0, 7)}`, content: oldContentBase64, sha: currentFileData.sha }),
     });
 
-    await supabaseAdmin.from('blueprints').update({ workflow_json: rolledBackJson }).eq('id', blueprintId);
+    await supabaseAdmin.from('automations').update({ workflow_json: rolledBackJson }).eq('id', automationId);
 
     return new Response(JSON.stringify({ message: 'Rollback successful!' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,

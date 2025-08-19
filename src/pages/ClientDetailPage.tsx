@@ -19,10 +19,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 // Define data shapes
 interface Client { id: string; name: string; }
 interface N8nInstance { id: string; instance_url: string; }
-interface Blueprint { id: string; name: string; }
+interface Automation { id: string; name: string; }
 interface Deployment {
   id: string;
-  blueprint_id: string;
+  automation_id: string;
   n8n_workflow_id: string;
 }
 interface N8nWorkflowStatus {
@@ -36,7 +36,7 @@ export default function ClientDetailPage() {
 
   const [client, setClient] = useState<Client | null>(null);
   const [instance, setInstance] = useState<N8nInstance | null>(null);
-  const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
+  const [automations, setAutomations] = useState<Automation[]>([]);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [workflowStatuses, setWorkflowStatuses] = useState<Map<string, boolean>>(new Map());
   
@@ -46,7 +46,7 @@ export default function ClientDetailPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const [isWarningModalOpen, setIsWarningModalOpen] = useState(false);
-  const [deploymentToUpdate, setDeploymentToUpdate] = useState<{ deploymentId: string; blueprintId: string } | null>(null);
+  const [deploymentToUpdate, setDeploymentToUpdate] = useState<{ deploymentId: string; automationId: string } | null>(null);
 
   // Form state - Use localStorage to pre-fill
   const [instanceUrl, setInstanceUrl] = useState(() => localStorage.getItem(`form_url_${clientId}`) || '');
@@ -82,12 +82,12 @@ export default function ClientDetailPage() {
             setInstanceUrl(instanceData.instance_url);
         }
 
-        const blueprintPromise = supabase.from('blueprints').select('id, name').eq('organization_id', profile.organization_id);
-        const deploymentsPromise = supabase.from('deployments').select('id, blueprint_id, n8n_workflow_id').eq('client_id', clientId);
+        const automationPromise = supabase.from('automations').select('id, name').eq('organization_id', profile.organization_id);
+        const deploymentsPromise = supabase.from('deployments').select('id, automation_id, n8n_workflow_id').eq('client_id', clientId);
         
-        const [blueprintResult, deploymentsResult] = await Promise.all([blueprintPromise, deploymentsPromise]);
+        const [automationResult, deploymentsResult] = await Promise.all([automationPromise, deploymentsPromise]);
 
-        if (blueprintResult.error) toast.error('Failed to fetch blueprints.'); else setBlueprints(blueprintResult.data || []);
+        if (automationResult.error) toast.error('Failed to fetch automations.'); else setAutomations(automationResult.data || []);
         if (deploymentsResult.error) toast.error("Failed to fetch deployments."); else setDeployments(deploymentsResult.data || []);
         
         if (instanceData) {
@@ -147,15 +147,15 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleDeploy = async (blueprintId: string) => {
+  const handleDeploy = async (automationId: string) => {
     if (!clientId || !instance) return toast.error('Client details or n8n instance connection is missing.');
-    setDeployingId(blueprintId);
+    setDeployingId(automationId);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("You must be logged in.");
-      const { data, error } = await supabase.functions.invoke('deploy-blueprint', {
+      const { data, error } = await supabase.functions.invoke('deploy-automation', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
-        body: { blueprintId, clientId, githubToken: session.provider_token },
+        body: { automationId, clientId, githubToken: session.provider_token },
       });
       if (error) throw error;
       toast.success(data.message);
@@ -169,8 +169,8 @@ export default function ClientDetailPage() {
   
   const proceedWithUpdate = async () => {
     if (!deploymentToUpdate) return;
-    const { deploymentId, blueprintId } = deploymentToUpdate;
-    setDeployingId(blueprintId);
+    const { deploymentId, automationId } = deploymentToUpdate;
+    setDeployingId(automationId);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.provider_token) throw new Error("You must be logged in via GitHub.");
@@ -191,7 +191,7 @@ export default function ClientDetailPage() {
 
   const handleUpdate = (deployment: Deployment) => {
     const isActive = workflowStatuses.get(deployment.n8n_workflow_id) ?? false;
-    setDeploymentToUpdate({ deploymentId: deployment.id, blueprintId: deployment.blueprint_id });
+    setDeploymentToUpdate({ deploymentId: deployment.id, automationId: deployment.automation_id });
     if (isActive) {
       setIsWarningModalOpen(true);
     } else {
@@ -225,8 +225,8 @@ export default function ClientDetailPage() {
     }
   };
 
-  const deployedBlueprintIds = new Set(deployments.map(d => d.blueprint_id));
-  const availableBlueprints = blueprints.filter(bp => !deployedBlueprintIds.has(bp.id));
+  const deployedAutomationIds = new Set(deployments.map(d => d.automation_id));
+  const availableAutomations = automations.filter(auto => !deployedAutomationIds.has(auto.id));
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
@@ -256,8 +256,8 @@ export default function ClientDetailPage() {
                         <ul className="divide-y">
                             {deployments.length > 0 ? deployments.map(dep => {
                             const isActive = workflowStatuses.get(dep.n8n_workflow_id) ?? false;
-                            const blueprintInfo = blueprints.find(b => b.id === dep.blueprint_id);
-                            const isUpdating = deployingId === dep.blueprint_id;
+                            const automationInfo = automations.find(a => a.id === dep.automation_id);
+                            const isUpdating = deployingId === dep.automation_id;
                             const isToggling = togglingId === dep.id;
                             
                             const statusText = isActive ? 'Active' : 'Inactive';
@@ -266,7 +266,7 @@ export default function ClientDetailPage() {
                             return (
                                 <li key={dep.id} className="flex items-center justify-between p-3">
                                 <div>
-                                    <p className="font-medium">{blueprintInfo?.name || 'Unknown Automation'}</p>
+                                    <p className="font-medium">{automationInfo?.name || 'Unknown Automation'}</p>
                                     <p className={`text-xs font-semibold ${statusColor}`}>{statusText}</p>
                                 </div>
                                 <div className="flex items-center gap-4">
@@ -310,11 +310,11 @@ export default function ClientDetailPage() {
                     ) : (
                         <div className="border rounded-md">
                         <ul className="divide-y">
-                            {availableBlueprints.length > 0 ? availableBlueprints.map(bp => (
-                            <li key={bp.id} className="flex items-center justify-between p-3">
-                                <p className="font-medium">{bp.name}</p>
-                                <Button variant="outline" size="sm" onClick={() => handleDeploy(bp.id)} disabled={deployingId === bp.id}>
-                                  {deployingId === bp.id ? 'Deploying...' : 'Deploy'}
+                            {availableAutomations.length > 0 ? availableAutomations.map(auto => (
+                            <li key={auto.id} className="flex items-center justify-between p-3">
+                                <p className="font-medium">{auto.name}</p>
+                                <Button variant="outline" size="sm" onClick={() => handleDeploy(auto.id)} disabled={deployingId === auto.id}>
+                                  {deployingId === auto.id ? 'Deploying...' : 'Deploy'}
                                 </Button>
                             </li>
                             )) : <p className="p-4 text-sm text-muted-foreground text-center">No new automations available to deploy.</p>}

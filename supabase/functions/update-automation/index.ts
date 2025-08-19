@@ -1,4 +1,4 @@
-// supabase/functions/update-blueprint/index.ts
+// supabase/functions/update-automation/index.ts
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -22,8 +22,8 @@ serve(async (req) => {
     const { data: { user } } = await supabaseUserClient.auth.getUser();
     if (!user) throw new Error("User not authenticated.");
 
-    const { blueprintId, description, workflowJson, githubToken } = await req.json();
-    if (!blueprintId || !githubToken || !workflowJson) {
+    const { automationId, description, workflowJson, githubToken } = await req.json();
+    if (!automationId || !githubToken || !workflowJson) {
       throw new Error("Missing required parameters.");
     }
 
@@ -32,10 +32,10 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
     
-    const { data: blueprint } = await supabaseAdmin.from('blueprints').select('git_repository').eq('id', blueprintId).single();
-    if (!blueprint) throw new Error("Blueprint not found.");
+    const { data: automation } = await supabaseAdmin.from('automations').select('git_repository').eq('id', automationId).single();
+    if (!automation) throw new Error("Automation not found.");
     
-    const repoPath = new URL(blueprint.git_repository).pathname.substring(1); 
+    const repoPath = new URL(automation.git_repository).pathname.substring(1); 
     const filePath = `repos/${repoPath}/contents/workflow.json`;
 
     const getFileResponse = await fetch(`https://api.github.com/${filePath}`, { headers: { 'Authorization': `token ${githubToken}` } });
@@ -57,10 +57,10 @@ serve(async (req) => {
       throw new Error(`GitHub Commit Error: ${errorBody.message}`);
     }
 
-    const { error: dbError } = await supabaseAdmin.from('blueprints').update({ description, workflow_json: workflowJson }).eq('id', blueprintId);
+    const { error: dbError } = await supabaseAdmin.from('automations').update({ description, workflow_json: workflowJson }).eq('id', automationId);
     if (dbError) throw dbError;
 
-    return new Response(JSON.stringify({ message: 'Blueprint updated successfully!' }), {
+    return new Response(JSON.stringify({ message: 'Automation updated successfully!' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,
     });
   } catch (error) {

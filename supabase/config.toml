@@ -1,36 +1,36 @@
 
-[functions.deploy-blueprint]
+[functions.deploy-automation]
 enabled = true
 verify_jwt = true
-import_map = "./functions/deploy-blueprint/deno.json"
+import_map = "./functions/deploy-automation/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/deploy-blueprint/index.ts"
+entrypoint = "./functions/deploy-automation/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/deploy-blueprint/*.html" ]
+# static_files = [ "./functions/deploy-automation/*.html" ]
 
-[functions.create-blueprint]
+[functions.create-automation]
 enabled = true
 verify_jwt = true
-import_map = "./functions/create-blueprint/deno.json"
+import_map = "./functions/create-automation/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/create-blueprint/index.ts"
+entrypoint = "./functions/create-automation/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/create-blueprint/*.html" ]
+# static_files = [ "./functions/create-automation/*.html" ]
 
-[functions.update-blueprint]
+[functions.update-automation]
 enabled = true
 verify_jwt = true
-import_map = "./functions/update-blueprint/deno.json"
+import_map = "./functions/update-automation/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/update-blueprint/index.ts"
+entrypoint = "./functions/update-automation/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/update-blueprint/*.html" ]
+# static_files = [ "./functions/update-automation/*.html" ]
 
 [functions.get-commit-history]
 enabled = true
@@ -43,16 +43,16 @@ entrypoint = "./functions/get-commit-history/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/get-commit-history/*.html" ]
 
-[functions.rollback-blueprint]
+[functions.rollback-automation]
 enabled = true
 verify_jwt = true
-import_map = "./functions/rollback-blueprint/deno.json"
+import_map = "./functions/rollback-automation/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/rollback-blueprint/index.ts"
+entrypoint = "./functions/rollback-automation/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/rollback-blueprint/*.html" ]
+# static_files = [ "./functions/rollback-automation/*.html" ]
 
 [functions.invite-user]
 enabled = true
@@ -109,16 +109,16 @@ entrypoint = "./functions/update-deployed-workflow/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/update-deployed-workflow/*.html" ]
 
-[functions.sync-blueprint-from-n8n]
+[functions.sync-automation-from-n8n]
 enabled = true
 verify_jwt = true
-import_map = "./functions/sync-blueprint-from-n8n/deno.json"
+import_map = "./functions/sync-automation-from-n8n/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/sync-blueprint-from-n8n/index.ts"
+entrypoint = "./functions/sync-automation-from-n8n/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/sync-blueprint-from-n8n/*.html" ]
+# static_files = [ "./functions/sync-automation-from-n8n/*.html" ]
 
 [functions.toggle-workflow-activation]
 enabled = true

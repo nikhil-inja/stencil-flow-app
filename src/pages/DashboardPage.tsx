@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 
 // Define the shape of the data we expect from our RPC
 interface DashboardStats {
-  blueprint_count: number;
+  automation_count: number;
   client_count: number;
   deployment_count: number;
   recent_activity: ActivityLogItem[];
@@ -21,7 +21,7 @@ interface ActivityLogItem {
   status: 'success' | 'failure';
   user_email: string;
   details: {
-    blueprintName?: string;
+    automationName?: string;
     errorMessage?: string;
   };
   created_at: string;
@@ -63,7 +63,7 @@ export default function DashboardPage() {
             <CardTitle className="text-sm font-medium">Total Automations</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.blueprint_count ?? 0}</div>
+            <div className="text-2xl font-bold">{stats?.automation_count ?? 0}</div>
           </CardContent>
         </Card>
         <Card>
