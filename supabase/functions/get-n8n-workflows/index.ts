@@ -34,12 +34,15 @@ serve(async (req) => {
     const { data: instance } = await supabaseAdmin.from('n8n_instances').select('instance_url, api_key').eq('client_id', clientId).single();
     if (!instance) throw new Error("n8n instance details for this client not found.");
 
-    // 4. Fetch all workflows from the n8n instance
+    // 4. Use the API key directly (no encryption/decryption)
+    const apiKey = instance.api_key;
+
+    // 5. Fetch all workflows from the n8n instance
     const cleanedUrl = instance.instance_url.replace(/\/$/, "");
     const targetUrl = `${cleanedUrl}/api/v1/workflows`;
 
     const response = await fetch(targetUrl, {
-      headers: { 'X-N8N-API-KEY': instance.api_key },
+      headers: { 'X-N8N-API-KEY': apiKey },
     });
 
     if (!response.ok) {
