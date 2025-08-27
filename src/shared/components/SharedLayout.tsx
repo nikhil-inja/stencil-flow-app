@@ -3,21 +3,26 @@ import { NavLink, Outlet, Link } from 'react-router-dom';
 import { Home, FileText, Users, Settings, LogOut } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { useSession } from '@/context/SessionContext';
-import { supabase } from '@/supabaseClient';
+import { apiClient } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
 
 export default function SharedLayout() {
   const { user } = useSession();
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    toast.success('Logged out.');
+    try {
+      await apiClient.auth.signOut();
+      toast.success('Logged out.');
+    } catch (error: any) {
+      console.error('Logout error:', error);
+      toast.error('Error during logout');
+    }
   };
 
   const navItems = [
     { to: '/', label: 'Dashboard', icon: Home },
     { to: '/automations', label: 'Automations', icon: FileText },
-    { to: '/clients', label: 'Clients', icon: Users },
+    { to: '/spaces', label: 'Spaces', icon: Users },
     { to: '/settings/team', label: 'Settings', icon: Settings },
   ];
 

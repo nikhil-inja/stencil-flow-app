@@ -1,6 +1,7 @@
 // src/pages/GitHubCallbackPage.tsx
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiClient } from '@/lib/apiClient';
 import { supabase } from '@/supabaseClient';
 import toast from 'react-hot-toast';
 
@@ -17,7 +18,7 @@ export default function GitHubCallbackPage() {
         const storeToken = async () => {
           const toastId = toast.loading("Finalizing GitHub connection...");
           try {
-            const { error } = await supabase.functions.invoke('store-github-token');
+            const { error } = await apiClient.functions.invoke('store-github-token');
             if (error) throw error;
             toast.success("GitHub account connected successfully!", { id: toastId });
           } catch (e: any) {

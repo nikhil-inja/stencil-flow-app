@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { apiClient } from '@/lib/apiClient';
 
 // Import Shadcn Components
 import { Button } from "@/shared/components/ui/button";
@@ -43,12 +43,9 @@ export default function AcceptInvitePage() {
     setLoading(true);
   
     try {
-      const { error } = await supabase.functions.invoke('accept-invite', {
+      const { error } = await apiClient.functions.invoke('accept-invite', {
         body: {
           token,
-          email,
-          password,
-          fullName,
         },
       });
   

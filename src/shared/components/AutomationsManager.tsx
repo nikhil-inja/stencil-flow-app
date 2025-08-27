@@ -1,8 +1,8 @@
 // src/components/AutomationsManager.tsx
 
 import { useState, useEffect, type FormEvent } from 'react';
-import { supabase } from '../supabaseClient';
-import { useSession } from '../context/SessionContext';
+import { apiClient } from '@/lib/apiClient';
+import { useSession } from '@/context/SessionContext';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom'; 
 
@@ -34,24 +34,61 @@ export default function AutomationsManager() {
 
   const fetchAutomations = async () => {
     if (!profile) return;
-    const { data, error } = await supabase
-      .from('automations')
-      .select('id, name, description')
-      .eq('workspace_id', profile.workspace_id)
-      .order('created_at', { ascending: false });
+    try {
+      // Get authentication token
+      const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+      if (sessionError || !sessionData?.session) {
+        toast.error("Authentication required");
+        return;
+      }
 
-    if (error) toast.error(`Failed to fetch automations: ${error.message}`);
-    else if (data) setAutomations(data);
+      const response = await fetch('http://localhost:8000/api/automations/', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionData.session.access_token}`,
+        },
+      });
+
+      if (response.ok) {
+        const automationsData = await response.json();
+        const automations = automationsData.results || automationsData || [];
+        setAutomations(automations);
+      } else {
+        throw new Error('Failed to fetch automations');
+      }
+    } catch (error: any) {
+      console.error('Error fetching automations:', error);
+      toast.error('Failed to fetch automations');
+    }
   };
   
   const handleDeleteAutomation = async (automationId: string) => {
     if (window.confirm('Are you sure you want to delete this automation?')) {
-        const { error } = await supabase.from('automations').delete().eq('id', automationId);
-        if (error) {
-            toast.error(error.message);
-        } else {
+        try {
+          // Get authentication token
+          const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+          if (sessionError || !sessionData?.session) {
+            toast.error("Authentication required");
+            return;
+          }
+
+          const response = await fetch(`http://localhost:8000/api/automations/${automationId}/`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${sessionData.session.access_token}`,
+            },
+          });
+
+          if (response.ok) {
             setAutomations(automations.filter((auto) => auto.id !== automationId));
             toast.success('Automation deleted.');
+          } else {
+            throw new Error('Failed to delete automation');
+          }
+        } catch (error: any) {
+          console.error('Error deleting automation:', error);
+          toast.error('Failed to delete automation');
         }
     }
   };
@@ -65,27 +102,37 @@ export default function AutomationsManager() {
     setIsCreating(true);
   
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("User not logged in.");
-      if (!session.provider_token) throw new Error("You must be logged in with GitHub to create an automation.");
-  
-      const { data: newAutomation, error } = await supabase.functions.invoke('create-automation', {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-        body: { 
-          name, 
-          description,
-          githubToken: session.provider_token,
-          workflowJson,
+      const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+      if (sessionError || !sessionData?.session) {
+        toast.error("Authentication required");
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/functions/create-automation/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionData.session.access_token}`,
         },
+        body: JSON.stringify({
+          name,
+          description,
+          github_token: 'placeholder_token', // TODO: Implement GitHub OAuth in Django
+          workflow_json: workflowJson,
+        }),
       });
-  
-      if (error) throw error;
-  
-      setAutomations([newAutomation, ...automations]);
-      setName('');
-      setDescription('');
-      setWorkflowJson('');
-      toast.success('Automation and GitHub repo created!');
+
+      if (response.ok) {
+        const newAutomation = await response.json();
+        setAutomations([newAutomation, ...automations]);
+        setName('');
+        setDescription('');
+        setWorkflowJson('');
+        toast.success('Automation and GitHub repo created!');
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create automation');
+      }
   
     } catch (error: any) {
       toast.error(`Failed to create automation: ${error.message}`);

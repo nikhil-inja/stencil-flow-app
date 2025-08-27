@@ -1,7 +1,7 @@
 // src/pages/AuthPage.tsx
 
 import { useState, type FormEvent } from 'react';
-import { supabase } from '../supabaseClient';
+import { apiClient } from '../../../lib/apiClient';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
@@ -21,7 +21,8 @@ export default function AuthPage() {
   const handleEmailLogin = async (event: FormEvent) => {
     event.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    
+    const { error } = await apiClient.auth.signInWithPassword({ email, password });
 
     if (error) {
       toast.error(error.message);

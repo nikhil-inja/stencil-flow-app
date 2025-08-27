@@ -37,16 +37,17 @@ serve(async (req) => {
     
     const { data: automation } = await supabaseAdmin
       .from('automations')
-      .select('git_repository')
+      .select('git_repository, workflow_path')
       .eq('id', automationId)
       .single();
 
     if (!automation) throw new Error("Automation not found.");
     
     const repoPath = new URL(automation.git_repository).pathname.substring(1);
+    const definitionFilePath = `${automation.workflow_path}/definition.json`;
 
-    // 4. Call the GitHub API to get the list of commits
-    const commitsResponse = await fetch(`https://api.github.com/repos/${repoPath}/commits`, {
+    // 4. Call the GitHub API to get the list of commits for the specific workflow file
+    const commitsResponse = await fetch(`https://api.github.com/repos/${repoPath}/commits?path=${definitionFilePath}`, {
       headers: {
         'Authorization': `token ${githubToken}`,
         'Accept': 'application/vnd.github.v3+json',

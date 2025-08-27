@@ -3,7 +3,7 @@
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { useEffect, useState } from "react";
-import { supabase } from "@/supabaseClient";
+import { apiClient } from "@/lib/apiClient";
 import toast from "react-hot-toast";
 import AutomationList from "@/shared/components/AutomationList";
 import CreateAutomationForm from "@/shared/components/CreateAutomationForm";
@@ -19,26 +19,37 @@ export default function AutomationsPage() {
   useEffect(() => {
     const checkGitHubConnection = async () => {
       setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.provider_token) {
-        setIsGitHubConnected(true);
-      } else {
+      try {
+        const response = await fetch('http://localhost:8000/api/functions/check-github-connection/', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) throw new Error('Failed to check GitHub connection');
+        const data = await response.json();
+        setIsGitHubConnected(data.is_connected);
+      } catch (e: any) {
+        console.error("Failed to check GitHub connection:", e);
         setIsGitHubConnected(false);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     checkGitHubConnection();
   }, []);
 
   const handleConnectGitHub = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { error } = await apiClient.auth.signInWithOAuth({
       provider: 'github',
       options: { 
         scopes: 'repo',
         queryParams: { prompt: 'consent' } 
       },
     });
-    if (error) toast.error(error.message);
+    if (error) toast.error(error);
   };
 
   return (

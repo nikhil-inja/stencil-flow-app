@@ -1,17 +1,17 @@
 // src/pages/DashboardPage.tsx
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/supabaseClient';
+import { apiClient } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/components/ui/table";
 import { Badge } from '@/shared/components/ui/badge';
 
-// Define the shape of the data we expect from our RPC
+// Define the shape of the data we expect from our API
 interface DashboardStats {
   automation_count: number;
-  client_count: number;
+  space_count: number; // Updated from client_count
   deployment_count: number;
   recent_activity: ActivityLogItem[];
 }
@@ -34,15 +34,25 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchStats = async () => {
       setLoading(true);
-      const { data, error } = await supabase.rpc('get_dashboard_stats');
+      try {
+        console.log('🔍 Fetching dashboard stats...');
+        const { data, error } = await apiClient.rpc('get-dashboard-stats');
 
-      if (error) {
-        toast.error('Failed to load dashboard stats: ' + error.message);
+        if (error) {
+          console.error('❌ Dashboard API error:', error);
+          toast.error('Failed to load dashboard stats: ' + error.message);
+          setStats(null);
+        } else {
+          console.log('✅ Dashboard stats loaded:', data);
+          setStats(data);
+        }
+      } catch (err: any) {
+        console.error('❌ Error fetching dashboard stats:', err);
+        toast.error('Failed to load dashboard stats');
         setStats(null);
-      } else {
-        setStats(data);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchStats();
@@ -68,10 +78,10 @@ export default function DashboardPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Managed Clients</CardTitle>
+            <CardTitle className="text-sm font-medium">Managed Spaces</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.client_count ?? 0}</div>
+            <div className="text-2xl font-bold">{stats?.space_count ?? 0}</div>
           </CardContent>
         </Card>
         <Card>

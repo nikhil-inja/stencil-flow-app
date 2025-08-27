@@ -174,3 +174,25 @@ entrypoint = "./functions/store-github-token/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/store-github-token/*.html" ]
+
+[functions.migrate-to-consolidated-repos]
+enabled = true
+verify_jwt = true
+import_map = "./functions/migrate-to-consolidated-repos/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/migrate-to-consolidated-repos/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/migrate-to-consolidated-repos/*.html" ]
+
+[functions.get-github-token]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-github-token/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/get-github-token/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/get-github-token/*.html" ]

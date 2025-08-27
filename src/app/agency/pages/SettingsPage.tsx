@@ -10,7 +10,7 @@ import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { Separator } from "@/shared/components/ui/separator";
-import { supabase } from '@/supabaseClient';
+import { apiClient } from '@/lib/apiClient';
 import { useSession } from '@/context/SessionContext';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/shared/components/ui/alert-dialog';
 
@@ -45,32 +45,34 @@ export default function TeamSettingsPage() {
       // This function now fetches both workspace settings and team members
       const loadPageData = async () => {
         // Fetch Workspace Settings
-        const { data: workspaceData, error: workspaceError } = await supabase
+        const { data: workspaceData, error: workspaceError } = await apiClient
           .from('workspaces')
           .select('n8n_instances(instance_url)')
-          .eq('id', profile.workspace_id)
+          .eq('id', profile.workspace.id)
           .single();
   
-        if (workspaceError && workspaceError.code !== 'PGRST116') {
+        if (workspaceError) {
           toast.error("Could not load workspace settings.");
         } else if (workspaceData && workspaceData.n8n_instances && Array.isArray(workspaceData.n8n_instances) && workspaceData.n8n_instances[0]) {
           setMasterUrl(workspaceData.n8n_instances[0].instance_url || '');
         }
 
-        // Fetch Team Members using our new database function
-        const { data: membersData, error: membersError } = await supabase
-          .rpc('get_team_members', { workspace_id: profile.workspace_id });
-  
-        if (membersError) {
-          toast.error("Could not load team members.");
-        } else {
-          setTeamMembers(membersData);
-        }
+        // TODO: Implement team members API endpoint
+        // For now, skip team members loading
+        setTeamMembers([]);
 
         try {
-            const { data, error } = await supabase.functions.invoke('check-github-connection');
-            if (error) throw error;
-            setIsGitHubConnected(data.isConnected);
+            const response = await fetch('http://localhost:8000/api/functions/check-github-connection/', {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                'Content-Type': 'application/json',
+              },
+            });
+            
+            if (!response.ok) throw new Error('Failed to check GitHub connection');
+            const data = await response.json();
+            setIsGitHubConnected(data.is_connected);
           } catch (e: any) {
             toast.error("Failed to check GitHub connection: " + e.message);
           } finally {
@@ -88,12 +90,13 @@ export default function TeamSettingsPage() {
     setIsInviting(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("You must be logged in to invite users.");
+      const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+      if (sessionError || !sessionData?.session) throw new Error("You must be logged in to invite users.");
+      const session = sessionData.session;
 
-      const { data, error } = await supabase.functions.invoke('invite-user', {
+      const { data, error } = await apiClient.functions.invoke('invite-user', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
-        body: { emailToInvite: inviteEmail },
+        body: { email_to_invite: inviteEmail },
       });
 
       if (error) throw error;
@@ -103,7 +106,7 @@ export default function TeamSettingsPage() {
           <div className="flex flex-col gap-2">
             <span>Invite link generated!</span>
             <p className="text-xs">Copy this link and send it to your teammate.</p>
-            <Input readOnly defaultValue={data.invitationLink} />
+            <Input readOnly defaultValue={data.invitation_link} />
             <Button size="sm" onClick={() => toast.dismiss(t.id)}>Dismiss</Button>
           </div>
         ), { duration: 15000 }
@@ -123,14 +126,26 @@ export default function TeamSettingsPage() {
     if (!profile) return;
     setIsSavingMasterCreds(true);
   
-    try {
-      const { error } = await supabase.rpc('upsert_and_link_master_instance', {
-        p_workspace_id: profile.workspace_id,
-        p_instance_url: masterUrl,
-        p_api_key: masterApiKey
+        try {
+      const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+      if (sessionError || !sessionData?.session) throw new Error("You must be logged in.");
+      
+      const response = await fetch('http://localhost:8000/api/n8n/upsert-master-instance/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({
+          instance_url: masterUrl,
+          api_key: masterApiKey
+        }),
       });
-  
-      if (error) throw error;
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save credentials');
+      }
       
       toast.success('Master n8n instance saved!');
     } catch (error: any) {
@@ -141,20 +156,20 @@ export default function TeamSettingsPage() {
   };
 
   const handleConnectGitHub = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { error } = await apiClient.auth.signInWithOAuth({
       provider: 'github',
       options: {
         scopes: 'repo',
         redirectTo: `${window.location.origin}/github-callback`,
       },
     });
-    if (error) toast.error(error.message);
+    if (error) toast.error(error);
   };
 
   const handleDisconnectGitHub = async () => {
     setIsConnecting(true);
     try {
-        const { error } = await supabase.functions.invoke('disconnect-github');
+        const { error } = await apiClient.functions.invoke('disconnect-github');
         if (error) throw error;
         toast.success("GitHub account disconnected.");
         setIsGitHubConnected(false);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/supabaseClient';
+import { apiClient } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
 
 import { Button } from "@/shared/components/ui/button";
@@ -29,10 +29,11 @@ export default function ImportPage() {
       setLoading(true);
       setError(null);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error("You must be logged in.");
+        const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+        if (sessionError || !sessionData?.session) throw new Error("You must be logged in.");
+        const session = sessionData.session;
 
-        const { data, error: funcError } = await supabase.functions.invoke('list-n8n-workflows', {
+        const { data, error: funcError } = await apiClient.functions.invoke('list-n8n-workflows', {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
 
@@ -62,27 +63,29 @@ export default function ImportPage() {
     const toastId = toast.loading(`Importing '${workflow.name}'...`);
   
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.provider_token) throw new Error("You must be logged in with GitHub to import.");
+      const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+      if (sessionError || !sessionData?.session) throw new Error("You must be logged in.");
+      const session = sessionData.session;
+      // Note: GitHub token will be handled when OAuth is implemented
   
       // Step 1: Get the full workflow details
-      const { data: fullWorkflow, error: detailsError } = await supabase.functions.invoke('get-n8n-workflow-details', {
+      const { data: fullWorkflow, error: detailsError } = await apiClient.functions.invoke('get-n8n-workflow-details', {
         headers: { Authorization: `Bearer ${session.access_token}` },
         body: { 
-            workflowId: workflow.id,
-            githubToken: session.provider_token
+            workflow_id: workflow.id,
+            github_token: 'placeholder_token' // TODO: Implement GitHub OAuth
         },
       });
       if (detailsError) throw detailsError;
   
       // Step 2: Call the create-automation function with the full data
-      const { error: createError } = await supabase.functions.invoke('create-automation', {
+      const { error: createError } = await apiClient.functions.invoke('create-automation', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
         body: {
-          name: fullWorkflow.name,
+          name: workflow.name, // Use the workflow name from the list, not fullWorkflow
           description: `Imported from n8n on ${new Date().toLocaleDateString()}`,
-          githubToken: session.provider_token,
-          workflowJson: JSON.stringify(fullWorkflow), // Pass the full object as a string
+          github_token: 'placeholder_token', // TODO: Implement GitHub OAuth
+          workflow_json: JSON.stringify(fullWorkflow), // Pass the full object as a string
         },
       });
       if (createError) throw createError;

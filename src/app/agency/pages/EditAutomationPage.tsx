@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { apiClient } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
 
 // Import Shadcn components
@@ -39,7 +39,7 @@ export default function EditAutomationPage() {
     setLoading(true);
     
     try {
-      const { data: automationData, error: automationError } = await supabase
+      const { data: automationData, error: automationError } = await apiClient
         .from('automations')
         .select('name, description, workflow_json')
         .eq('id', automationId)
@@ -53,13 +53,13 @@ export default function EditAutomationPage() {
         setWorkflowJson(JSON.stringify(automationData.workflow_json, null, 2));
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.provider_token) { 
-        const { data: commitHistory, error: historyError } = await supabase.functions.invoke('get-commit-history', {
-          headers: { 'Authorization': `Bearer ${session.access_token}` },
+      const { data: sessionData } = await apiClient.auth.getSession();
+      if (sessionData?.session) { 
+        const { data: commitHistory, error: historyError } = await apiClient.functions.invoke('get-commit-history', {
+          headers: { 'Authorization': `Bearer ${sessionData.session.access_token}` },
           body: { 
-            automationId,
-            githubToken: session.provider_token // Ensure this is being sent
+            automation_id: automationId,
+            github_token: 'placeholder_token' // TODO: Implement GitHub OAuth
           }, 
         });
         if (historyError) throw historyError;
@@ -90,16 +90,16 @@ export default function EditAutomationPage() {
     }
   
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("You must be logged in.");
+      const { data: sessionData } = await apiClient.auth.getSession();
+      if (!sessionData?.session) throw new Error("You must be logged in.");
   
-      const { error } = await supabase.functions.invoke('update-automation', {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      const { error } = await apiClient.functions.invoke('update-automation', {
+        headers: { 'Authorization': `Bearer ${sessionData.session.access_token}` },
         body: {
-          automationId,
+          automation_id: automationId,
           description,
-          workflowJson: parsedJson,
-          // The githubToken is no longer needed here
+          workflow_json: parsedJson,
+          github_token: 'placeholder_token', // TODO: Implement GitHub OAuth
         },
       });
   
@@ -120,15 +120,15 @@ export default function EditAutomationPage() {
     }
     setRollingBackSha(commitSha);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("You must be logged in.");
+      const { data: sessionData } = await apiClient.auth.getSession();
+      if (!sessionData?.session) throw new Error("You must be logged in.");
   
-      const { error } = await supabase.functions.invoke('rollback-automation', {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      const { error } = await apiClient.functions.invoke('rollback-automation', {
+        headers: { 'Authorization': `Bearer ${sessionData.session.access_token}` },
         body: {
-          automationId,
-          commitSha,
-          // The githubToken is no longer needed here
+          automation_id: automationId,
+          commit_sha: commitSha,
+          github_token: 'placeholder_token', // TODO: Implement GitHub OAuth
         },
       });
   
@@ -147,16 +147,16 @@ export default function EditAutomationPage() {
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.provider_token) {
-          throw new Error("You must be logged in via GitHub to sync.");
+        const { data: sessionData } = await apiClient.auth.getSession();
+        if (!sessionData?.session) {
+          throw new Error("You must be logged in to sync.");
         }
 
-        const { data, error } = await supabase.functions.invoke('sync-automation-from-n8n', {
-            headers: { Authorization: `Bearer ${session.access_token}` },
+        const { data, error } = await apiClient.functions.invoke('sync-automation-from-n8n', {
+            headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
             body: { 
-                automationId,
-                githubToken: session.provider_token // <-- This was missing
+                automation_id: automationId,
+                github_token: 'placeholder_token' // TODO: Implement GitHub OAuth
             },
         });
 

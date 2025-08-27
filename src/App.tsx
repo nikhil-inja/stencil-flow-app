@@ -4,18 +4,18 @@ import { SessionProvider } from './context/SessionContext';
 import { Toaster } from 'react-hot-toast';
 
 // Import Layout and Page Components
-import SharedLayout from './components/SharedLayout';
-import ProtectedRoute from './components/ProtectedRoute';
-import AuthPage from './pages/AuthPage';
-import DashboardPage from './pages/DashboardPage';
-import AutomationsPage from './pages/AutomationsPage';
-import ClientsPage from './pages/ClientsPage';
-import ClientDetailPage from './pages/ClientDetailPage';
-import EditAutomationPage from './pages/EditAutomationPage';
-import TeamSettingsPage from './pages/SettingsPage';
-import ImportPage from './pages/ImportPage';
-import AcceptInvitePage from './pages/AcceptInvitePage';
-import GitHubCallbackPage from './pages/GitHubCallbackPage';
+import SharedLayout from './shared/components/SharedLayout';
+import ProtectedRoute from './shared/components/ProtectedRoute';
+import AuthPage from './app/agency/pages/AuthPage';
+import DashboardPage from './app/agency/pages/DashboardPage';
+import AutomationsPage from './app/agency/pages/AutomationsPage';
+import SpacesPage from './app/agency/pages/SpacesPage';
+import SpaceDetailPage from './app/agency/pages/SpaceDetailPage';
+import EditAutomationPage from './app/agency/pages/EditAutomationPage';
+import TeamSettingsPage from './app/agency/pages/SettingsPage';
+import ImportPage from './app/agency/pages/ImportPage';
+import AcceptInvitePage from './app/agency/pages/AcceptInvitePage';
+import GitHubCallbackPage from './app/agency/pages/GitHubCallbackPage';
 
 export default function App() {
   return (
@@ -31,8 +31,8 @@ export default function App() {
             <Route element={<SharedLayout />}>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/automations" element={<AutomationsPage />} />
-              <Route path="/clients" element={<ClientsPage />} />
-              <Route path="/client/:clientId" element={<ClientDetailPage />} />
+              <Route path="/spaces" element={<SpacesPage />} />
+              <Route path="/space/:spaceId" element={<SpaceDetailPage />} />
               <Route path="/automation/:automationId/edit" element={<EditAutomationPage />} />
               <Route path="/settings/team" element={<TeamSettingsPage />} />
               <Route path="/import/n8n" element={<ImportPage />} />

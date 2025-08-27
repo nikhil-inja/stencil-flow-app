@@ -1,7 +1,7 @@
 // src/components/CreateAutomationForm.tsx
 
 import { useState, type FormEvent } from 'react';
-import { supabase } from '../supabaseClient';
+import { apiClient } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
 
 import { Button } from "@/shared/components/ui/button";
@@ -29,29 +29,37 @@ export default function CreateAutomationForm({ onAutomationCreated }: CreateAuto
     setIsCreating(true);
   
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("User not logged in.");
-      if (!session.provider_token) throw new Error("You must be logged in with GitHub to create an automation.");
-  
-      // NOTE: The function now returns the full automation object, not just a partial one.
-      const { error } = await supabase.functions.invoke('create-automation', {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-        body: { 
-          name, 
-          description,
-          githubToken: session.provider_token,
-          workflowJson,
+      const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+      if (sessionError || !sessionData?.session) {
+        toast.error("Authentication required");
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/functions/create-automation/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionData.session.access_token}`,
         },
+        body: JSON.stringify({
+          name,
+          description,
+          github_token: 'placeholder_token', // TODO: Implement GitHub OAuth
+          workflow_json: workflowJson,
+        }),
       });
-  
-      if (error) throw error;
-  
-      // Reset form and notify parent to refresh the list
-      setName('');
-      setDescription('');
-      setWorkflowJson('');
-      toast.success('Automation and GitHub repo created!');
-      onAutomationCreated();
+
+      if (response.ok) {
+        // Reset form and notify parent to refresh the list
+        setName('');
+        setDescription('');
+        setWorkflowJson('');
+        toast.success('Automation and GitHub repo created!');
+        onAutomationCreated();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create automation');
+      }
   
     } catch (error: any) {
       toast.error(`Failed to create automation: ${error.message}`);

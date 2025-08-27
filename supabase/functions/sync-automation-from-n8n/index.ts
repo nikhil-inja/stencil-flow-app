@@ -40,13 +40,14 @@ serve(async (req) => {
       .select(`
         git_repository,
         workflow_json,
+        workflow_path,
         workspace:workspaces (master_n8n_url, master_n8n_api_key)
       `)
       .eq('id', automationId)
       .single();
 
     if (!automationData) throw new Error("Automation not found.");
-    const { git_repository, workflow_json, workspace } = automationData as any;
+    const { git_repository, workflow_json, workflow_path, workspace } = automationData as any;
     if (!workspace?.master_n8n_url || !workspace?.master_n8n_api_key) {
       throw new Error("Master n8n credentials are not configured in settings.");
     }
@@ -65,12 +66,13 @@ serve(async (req) => {
 
     // 5. Commit the updated workflow to the GitHub repository
     const repoPath = new URL(git_repository).pathname.substring(1);
-    const filePath = `repos/${repoPath}/contents/workflow.json`;
+    const definitionFilePath = `${workflow_path}/definition.json`;
+    const filePath = `repos/${repoPath}/contents/${definitionFilePath}`;
 
     const getFileResponse = await fetch(`https://api.github.com/${filePath}`, {
       headers: { 'Authorization': `token ${githubToken}` },
     });
-    if (!getFileResponse.ok) throw new Error("Could not find workflow file in GitHub repo to update.");
+    if (!getFileResponse.ok) throw new Error("Could not find workflow definition file in GitHub repo to update.");
     const fileData = await getFileResponse.json();
     const currentSha = fileData.sha;
 

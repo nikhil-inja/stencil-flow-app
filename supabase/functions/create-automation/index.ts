@@ -33,50 +33,72 @@ serve(async (req) => {
         throw new Error("The provided workflow data is not valid JSON.");
     }
 
-    let repoData = null;
-    let attempt = 0;
-    const baseRepoName = name.toLowerCase().replace(/\s+/g, '-');
-    let currentRepoName = baseRepoName;
-
-    while (repoData === null) {
-      if (attempt > 0) { currentRepoName = `${baseRepoName}-${attempt}`; }
-      const githubResponse = await fetch('https://api.github.com/user/repos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `token ${githubToken}`, 'Accept': 'application/vnd.github.v3+json' },
-        body: JSON.stringify({ name: currentRepoName, description, private: true }),
-      });
-      if (githubResponse.ok) {
-        repoData = await githubResponse.json();
-      } else if (githubResponse.status === 422) {
-        const errorBody = await githubResponse.json();
-        if (errorBody.errors?.some((e: any) => e.message.includes('name already exists'))) {
-          attempt++;
-        } else { throw new Error(`GitHub API Error: ${errorBody.message}`); }
-      } else {
-        const errorBody = await githubResponse.json();
-        throw new Error(`GitHub API Error: ${errorBody.message}`);
-      }
-      if (attempt > 10) throw new Error("Could not find an available repository name.");
-    }
-    
-    const owner = repoData.owner.login;
-    const repo = repoData.name;
-    const path = 'workflow.json';
-    const contentEncoded = encode(JSON.stringify(parsedWorkflowJson, null, 2));
-
-    await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `token ${githubToken}`, 'Accept': 'application/vnd.github.v3+json' },
-        body: JSON.stringify({ message: 'Initial commit: Add workflow.json', content: contentEncoded }),
-    });
-
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     const { data: profile } = await supabaseAdmin.from('profiles').select('workspace_id').eq('id', user.id).single();
     if (!profile) throw new Error("Could not find user profile.");
+
+    // Get workspace repository URL
+    const { data: workspace } = await supabaseAdmin.from('workspaces').select('git_repository').eq('id', profile.workspace_id).single();
+    if (!workspace?.git_repository) {
+        throw new Error("Workspace repository not found. Please run migration first or contact support.");
+    }
+
+    // Create workflow folder structure
+    const workflowFolderName = name.toLowerCase().replace(/\s+/g, '-');
+    const workflowPath = `workflows/${workflowFolderName}`;
+    const repoPath = new URL(workspace.git_repository).pathname.substring(1);
+
+    // Check if workflow folder already exists
+    const checkExistingResponse = await fetch(`https://api.github.com/repos/${repoPath}/contents/${workflowPath}`, {
+        headers: { 'Authorization': `token ${githubToken}` },
+    });
     
+    if (checkExistingResponse.ok) {
+        throw new Error(`A workflow with the name "${name}" already exists. Please choose a different name.`);
+    }
+
+    // Create workflow definition file
+    const definitionContent = JSON.stringify(parsedWorkflowJson, null, 2);
+    const definitionEncoded = encode(definitionContent);
+
+    await fetch(`https://api.github.com/repos/${repoPath}/contents/${workflowPath}/definition.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `token ${githubToken}`, 'Accept': 'application/vnd.github.v3+json' },
+        body: JSON.stringify({ 
+            message: `Create new workflow: ${name}`, 
+            content: definitionEncoded 
+        }),
+    });
+
+    // Create deployments folder with README
+    const deploymentsReadme = `# Deployments for ${name}
+
+This folder contains client-specific deployment configurations for the ${name} workflow.
+
+Each deployment file represents a specific client instance of this workflow.
+`;
+    const deploymentsReadmeEncoded = encode(deploymentsReadme);
+    
+    await fetch(`https://api.github.com/repos/${repoPath}/contents/${workflowPath}/deployments/README.md`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `token ${githubToken}`, 'Accept': 'application/vnd.github.v3+json' },
+        body: JSON.stringify({ 
+            message: `Create deployments folder for ${name}`, 
+            content: deploymentsReadmeEncoded 
+        }),
+    });
+
+    // Insert automation record with new structure
     const { data: newAutomation, error: dbError } = await supabaseAdmin
       .from('automations')
-      .insert({ name, description, workspace_id: profile.workspace_id, git_repository: repoData.html_url, workflow_json: parsedWorkflowJson })
+      .insert({ 
+          name, 
+          description, 
+          workspace_id: profile.workspace_id, 
+          git_repository: workspace.git_repository, 
+          workflow_path: workflowPath,
+          workflow_json: parsedWorkflowJson 
+      })
       .select('id, name, description').single();
     if (dbError) throw dbError;
 

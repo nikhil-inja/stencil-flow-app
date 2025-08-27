@@ -2,6 +2,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,7 +34,7 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
       );
     
-    const { data: automation } = await supabaseAdmin.from('automations').select('name, workflow_json, git_repository').eq('id', automationId).single();
+    const { data: automation } = await supabaseAdmin.from('automations').select('name, workflow_json, git_repository, workflow_path').eq('id', automationId).single();
     if (!automation) throw new Error("Automation not found.");
 
     // Fetch the client's name along with the instance details
@@ -85,7 +86,57 @@ serve(async (req) => {
     const mainBranchData = await mainBranchInfo.json();
     const mainBranchSha = mainBranchData.commit.sha;
 
-    // 7. Record the deployment in our database
+    // 7. Create deployment configuration file
+    const clientFileName = client.name.toLowerCase().replace(/\s+/g, '-');
+    const deploymentFilePath = `${automation.workflow_path}/deployments/${clientFileName}.json`;
+    
+    const deploymentConfig = {
+      clientId: clientId,
+      clientName: client.name,
+      n8nWorkflowId: n8nWorkflowId,
+      deployedCommitSha: mainBranchSha,
+      deployedAt: new Date().toISOString(),
+      automationName: automation.name,
+      status: 'active'
+    };
+
+    const deploymentContent = JSON.stringify(deploymentConfig, null, 2);
+    const deploymentEncoded = encode(deploymentContent);
+
+    // Check if deployment file already exists and get its SHA if it does
+    let existingFileSha = null;
+    const existingFileResponse = await fetch(`https://api.github.com/repos/${repoPath}/contents/${deploymentFilePath}`, {
+      headers: { 'Authorization': `token ${githubToken}` },
+    });
+    
+    if (existingFileResponse.ok) {
+      const existingFileData = await existingFileResponse.json();
+      existingFileSha = existingFileData.sha;
+    }
+
+    // Create or update deployment file
+    const fileBody: any = {
+      message: existingFileSha 
+        ? `Update deployment: ${automation.name} for ${client.name}` 
+        : `Create deployment: ${automation.name} for ${client.name}`,
+      content: deploymentEncoded
+    };
+    
+    if (existingFileSha) {
+      fileBody.sha = existingFileSha;
+    }
+
+    await fetch(`https://api.github.com/repos/${repoPath}/contents/${deploymentFilePath}`, {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json', 
+        'Authorization': `token ${githubToken}`, 
+        'Accept': 'application/vnd.github.v3+json' 
+      },
+      body: JSON.stringify(fileBody),
+    });
+
+    // 8. Record the deployment in our database
     const { data: newDeployment, error: deploymentError } = await supabaseAdmin
       .from('deployments')
       .upsert({
@@ -93,29 +144,12 @@ serve(async (req) => {
         client_id: clientId,
         n8n_workflow_id: n8nWorkflowId,
         deployed_commit_sha: mainBranchSha,
+        deployment_file_path: deploymentFilePath,
       }, { onConflict: 'automation_id, client_id' })
       .select('id')
       .single();
 
     if (deploymentError || !newDeployment) throw deploymentError || new Error("Failed to create or retrieve deployment record.");
-
-    // 8. NEW: Create a dedicated branch for this client in the GitHub repo
-    const clientBranchName = `client/${client.name.toLowerCase().replace(/\s+/g, '-')}`;
-    await fetch(`https://api.github.com/repos/${repoPath}/git/refs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `token ${githubToken}` },
-        body: JSON.stringify({
-            ref: `refs/heads/${clientBranchName}`,
-            sha: mainBranchSha,
-        }),
-    });
-    // Note: This will error if the branch already exists. A more robust solution would check first.
-
-    // 9. NEW: Update the new deployment record with the branch name
-    await supabaseAdmin
-      .from('deployments')
-      .update({ git_branch: clientBranchName })
-      .eq('id', newDeployment.id);
 
     return new Response(JSON.stringify({ message: `Successfully deployed '${automation.name}'!` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -28,11 +28,12 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     
-    const { data: automation } = await supabaseAdmin.from('automations').select('git_repository').eq('id', automationId).single();
+    const { data: automation } = await supabaseAdmin.from('automations').select('git_repository, workflow_path').eq('id', automationId).single();
     if (!automation) throw new Error("Automation not found.");
     
     const repoPath = new URL(automation.git_repository).pathname.substring(1);
-    const filePath = `repos/${repoPath}/contents/workflow.json`;
+    const definitionFilePath = `${automation.workflow_path}/definition.json`;
+    const filePath = `repos/${repoPath}/contents/${definitionFilePath}`;
 
     const oldFileResponse = await fetch(`https://api.github.com/${filePath}?ref=${commitSha}`, { headers: { 'Authorization': `token ${githubToken}` } });
     if (!oldFileResponse.ok) throw new Error("Could not find the specified version in GitHub.");
