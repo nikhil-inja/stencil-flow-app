@@ -27,24 +27,24 @@ serve(async (req) => {
     const { workflowId } = await req.json();
     if (!workflowId) throw new Error("Workflow ID is required.");
 
-    // 3. Get the user's organization and master n8n credentials
+    // 3. Get the user's workspace and master n8n credentials
     const supabaseAdmin = createClient(
         Deno.env.get('SUPABASE_URL') ?? '',
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
-    const { data: profile } = await supabaseAdmin.from('profiles').select('organization_id').eq('id', user.id).single();
+    const { data: profile } = await supabaseAdmin.from('profiles').select('workspace_id').eq('id', user.id).single();
     if (!profile) throw new Error("Could not find user profile.");
 
-    const { data: organization } = await supabaseAdmin.from('organizations').select('n8n_instances (instance_url, api_key)').eq('id', profile.organization_id).single();
-    if (!organization?.n8n_instances || organization?.n8n_instances?.length === 0) {
+    const { data: workspace } = await supabaseAdmin.from('workspaces').select('n8n_instances (instance_url, api_key)').eq('id', profile.workspace_id).single();
+    if (!workspace?.n8n_instances || workspace?.n8n_instances?.length === 0) {
         throw new Error("No n8n instances configured in settings.");
     }
 
     // 4. Call the n8n API to get the full details for the specific workflow
-    // organization.n8n_instances is an array, so use the first instance
-    const n8nInstance = Array.isArray(organization.n8n_instances)
-      ? organization.n8n_instances[0]
-      : organization.n8n_instances;
+    // workspace.n8n_instances is an array, so use the first instance
+    const n8nInstance = Array.isArray(workspace.n8n_instances)
+      ? workspace.n8n_instances[0]
+      : workspace.n8n_instances;
 
     const cleanedUrl = n8nInstance.instance_url.replace(/\/$/, "");
     const targetUrl = `${cleanedUrl}/api/v1/workflows/${workflowId}`;

@@ -1,7 +1,7 @@
 // src/components/SharedLayout.tsx
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import { Home, FileText, Users, Settings, LogOut } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/shared/components/ui/button';
 import { useSession } from '@/context/SessionContext';
 import { supabase } from '@/supabaseClient';
 import toast from 'react-hot-toast';

@@ -12,7 +12,7 @@ import AutomationsPage from './pages/AutomationsPage';
 import ClientsPage from './pages/ClientsPage';
 import ClientDetailPage from './pages/ClientDetailPage';
 import EditAutomationPage from './pages/EditAutomationPage';
-import TeamSettingsPage from './pages/TeamSettingsPage';
+import TeamSettingsPage from './pages/SettingsPage';
 import ImportPage from './pages/ImportPage';
 import AcceptInvitePage from './pages/AcceptInvitePage';
 import GitHubCallbackPage from './pages/GitHubCallbackPage';

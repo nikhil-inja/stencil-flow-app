@@ -5,14 +5,14 @@ import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 // Import Shadcn Components
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/shared/components/ui/button";
+import { Input } from "@/shared/components/ui/input";
+import { Label } from "@/shared/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
+import { Separator } from "@/shared/components/ui/separator";
 import { supabase } from '@/supabaseClient';
 import { useSession } from '@/context/SessionContext';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/shared/components/ui/alert-dialog';
 
 interface TeamMember {
     id: string;
@@ -42,24 +42,24 @@ export default function TeamSettingsPage() {
     useEffect(() => {
       if (!profile) return;
   
-      // This function now fetches both org settings and team members
+      // This function now fetches both workspace settings and team members
       const loadPageData = async () => {
-        // Fetch Org Settings
-        const { data: orgData, error: orgError } = await supabase
-          .from('organizations')
+        // Fetch Workspace Settings
+        const { data: workspaceData, error: workspaceError } = await supabase
+          .from('workspaces')
           .select('n8n_instances(instance_url)')
-          .eq('id', profile.organization_id)
+          .eq('id', profile.workspace_id)
           .single();
   
-        if (orgError && orgError.code !== 'PGRST116') {
-          toast.error("Could not load organization settings.");
-        } else if (orgData && orgData.n8n_instances && Array.isArray(orgData.n8n_instances) && orgData.n8n_instances[0]) {
-          setMasterUrl(orgData.n8n_instances[0].instance_url || '');
+        if (workspaceError && workspaceError.code !== 'PGRST116') {
+          toast.error("Could not load workspace settings.");
+        } else if (workspaceData && workspaceData.n8n_instances && Array.isArray(workspaceData.n8n_instances) && workspaceData.n8n_instances[0]) {
+          setMasterUrl(workspaceData.n8n_instances[0].instance_url || '');
         }
 
         // Fetch Team Members using our new database function
         const { data: membersData, error: membersError } = await supabase
-          .rpc('get_team_members', { org_id: profile.organization_id });
+          .rpc('get_team_members', { workspace_id: profile.workspace_id });
   
         if (membersError) {
           toast.error("Could not load team members.");
@@ -125,7 +125,7 @@ export default function TeamSettingsPage() {
   
     try {
       const { error } = await supabase.rpc('upsert_and_link_master_instance', {
-        p_organization_id: profile.organization_id,
+        p_workspace_id: profile.workspace_id,
         p_instance_url: masterUrl,
         p_api_key: masterApiKey
       });
@@ -224,7 +224,7 @@ export default function TeamSettingsPage() {
                 <Input
                   id="master-url"
                   type="url"
-                  placeholder="https://my-agency.n8n.cloud"
+                  placeholder="https://my-account.n8n.cloud"
                   value={masterUrl}
                   onChange={(e) => setMasterUrl(e.target.value)}
                   disabled={isSavingMasterCreds}
@@ -254,7 +254,7 @@ export default function TeamSettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Invite New Member</CardTitle>
-            <CardDescription>Invite a new member to your organization.</CardDescription>
+            <CardDescription>Invite a new member to your workspace.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleInviteUser} className="flex items-center gap-2 max-w-sm">
@@ -281,7 +281,7 @@ export default function TeamSettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Team Members</CardTitle>
-            <CardDescription>Manage members of your organization.</CardDescription>
+            <CardDescription>Manage members of your workspace.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="border rounded-md">

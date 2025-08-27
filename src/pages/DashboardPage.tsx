@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/supabaseClient';
 import toast from 'react-hot-toast';
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/components/ui/table";
+import { Badge } from '@/shared/components/ui/badge';
 
 // Define the shape of the data we expect from our RPC
 interface DashboardStats {

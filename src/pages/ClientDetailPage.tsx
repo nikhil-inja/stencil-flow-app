@@ -7,14 +7,14 @@ import { useSession } from '../context/SessionContext';
 import toast from 'react-hot-toast';
 
 // Import Shadcn Components
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from '@/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Button } from "@/shared/components/ui/button";
+import { Input } from "@/shared/components/ui/input";
+import { Label } from "@/shared/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
+import { Separator } from "@/shared/components/ui/separator";
+import { Switch } from '@/shared/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/components/ui/tooltip';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/shared/components/ui/alert-dialog';
 
 // Define data shapes
 interface Client { id: string; name: string; }
@@ -82,7 +82,7 @@ export default function ClientDetailPage() {
             setInstanceUrl(instanceData.instance_url);
         }
 
-        const automationPromise = supabase.from('automations').select('id, name').eq('organization_id', profile.organization_id);
+        const automationPromise = supabase.from('automations').select('id, name').eq('workspace_id', profile.workspace_id);
         const deploymentsPromise = supabase.from('deployments').select('id, automation_id, n8n_workflow_id').eq('client_id', clientId);
         
         const [automationResult, deploymentsResult] = await Promise.all([automationPromise, deploymentsPromise]);
@@ -120,7 +120,7 @@ export default function ClientDetailPage() {
     event.preventDefault();
     if (!profile || !clientId) return;
     setIsSaving(true);
-    const { error } = await supabase.from('n8n_instances').upsert({ client_id: clientId, instance_url: instanceUrl, api_key: apiKey, organization_id: profile.organization_id }, { onConflict: 'client_id' });
+    const { error } = await supabase.from('n8n_instances').upsert({ client_id: clientId, instance_url: instanceUrl, api_key: apiKey, workspace_id: profile.workspace_id }, { onConflict: 'client_id' });
     if (error) {
       toast.error('Error saving instance: ' + error.message);
     } else {

@@ -30,7 +30,7 @@ serve(async (req) => {
       throw new Error("Missing automationId or githubToken.");
     }
     
-    // 3. Get automation and organization details
+    // 3. Get automation and workspace details
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -40,14 +40,14 @@ serve(async (req) => {
       .select(`
         git_repository,
         workflow_json,
-        organization:organizations (master_n8n_url, master_n8n_api_key)
+        workspace:workspaces (master_n8n_url, master_n8n_api_key)
       `)
       .eq('id', automationId)
       .single();
 
     if (!automationData) throw new Error("Automation not found.");
-    const { git_repository, workflow_json, organization } = automationData as any;
-    if (!organization?.master_n8n_url || !organization?.master_n8n_api_key) {
+    const { git_repository, workflow_json, workspace } = automationData as any;
+    if (!workspace?.master_n8n_url || !workspace?.master_n8n_api_key) {
       throw new Error("Master n8n credentials are not configured in settings.");
     }
 
@@ -55,10 +55,10 @@ serve(async (req) => {
     if (!n8nWorkflowId) throw new Error("Could not find source n8n workflow ID in automation.");
 
     // 4. Fetch the LATEST version from the user's master n8n instance
-    const cleanedUrl = organization.master_n8n_url.replace(/\/$/, "");
+    const cleanedUrl = workspace.master_n8n_url.replace(/\/$/, "");
     const targetUrl = `${cleanedUrl}/api/v1/workflows/${n8nWorkflowId}`;
     const n8nResponse = await fetch(targetUrl, {
-      headers: { 'X-N8N-API-KEY': organization.master_n8n_api_key },
+      headers: { 'X-N8N-API-KEY': workspace.master_n8n_api_key },
     });
     if (!n8nResponse.ok) throw new Error("Could not fetch latest workflow from your n8n instance.");
     const newWorkflowJson = await n8nResponse.json();

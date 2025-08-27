@@ -7,8 +7,8 @@ import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { PlusCircle } from 'lucide-react';
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from "@/shared/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
 
 interface Automation {
   id: string;
@@ -35,7 +35,7 @@ export default function AutomationList() {
     const { data, error } = await supabase
       .from('automations')
       .select('id, name, description')
-      .eq('organization_id', profile.organization_id)
+      .eq('workspace_id', profile.workspace_id)
       .order('created_at', { ascending: false });
 
     if (error) toast.error(`Failed to fetch automations: ${error.message}`);

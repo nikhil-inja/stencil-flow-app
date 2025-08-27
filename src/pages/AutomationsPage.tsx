@@ -1,12 +1,12 @@
 // src/pages/AutomationsPage.tsx
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/shared/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { useEffect, useState } from "react";
 import { supabase } from "@/supabaseClient";
 import toast from "react-hot-toast";
-import AutomationList from "@/components/AutomationList";
-import CreateAutomationForm from "@/components/CreateAutomationForm";
+import AutomationList from "@/shared/components/AutomationList";
+import CreateAutomationForm from "@/shared/components/CreateAutomationForm";
 // import { PlusCircle } from "lucide-react";
 
 export default function AutomationsPage() {

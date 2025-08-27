@@ -5,9 +5,9 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/supabaseClient';
 import toast from 'react-hot-toast';
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/shared/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/components/ui/table";
 
 // Define the shape of the n8n workflow data
 interface N8nWorkflow {

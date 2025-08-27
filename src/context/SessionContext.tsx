@@ -10,7 +10,7 @@ interface Profile {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
-  organization_id: string;
+  workspace_id: string;
 }
 
 // Define the shape of the context value
@@ -40,7 +40,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, full_name, avatar_url, organization_id')
+          .select('id, full_name, avatar_url, workspace_id')
           .eq('id', session.user.id)
           .single(); // .single() expects one row and returns an object instead of an array
 

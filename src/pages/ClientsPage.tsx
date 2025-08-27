@@ -7,9 +7,9 @@ import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 // Import Shadcn Components
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/shared/components/ui/button";
+import { Input } from "@/shared/components/ui/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 
 interface Client {
   id: string;
@@ -33,7 +33,7 @@ export default function ClientsPage() {
     const { data, error } = await supabase
       .from('clients')
       .select('id, name')
-      .eq('organization_id', profile.organization_id)
+      .eq('workspace_id', profile.workspace_id)
       .order('created_at', { ascending: false });
     
     if (error) {
@@ -50,7 +50,7 @@ export default function ClientsPage() {
 
     const { data, error } = await supabase
       .from('clients')
-      .insert([{ name: newClientName, organization_id: profile.organization_id }])
+      .insert([{ name: newClientName, workspace_id: profile.workspace_id }])
       .select('id, name')
       .single();
 

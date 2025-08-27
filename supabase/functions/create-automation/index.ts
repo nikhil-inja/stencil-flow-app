@@ -71,12 +71,12 @@ serve(async (req) => {
     });
 
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    const { data: profile } = await supabaseAdmin.from('profiles').select('organization_id').eq('id', user.id).single();
+    const { data: profile } = await supabaseAdmin.from('profiles').select('workspace_id').eq('id', user.id).single();
     if (!profile) throw new Error("Could not find user profile.");
     
     const { data: newAutomation, error: dbError } = await supabaseAdmin
       .from('automations')
-      .insert({ name, description, organization_id: profile.organization_id, git_repository: repoData.html_url, workflow_json: parsedWorkflowJson })
+      .insert({ name, description, workspace_id: profile.workspace_id, git_repository: repoData.html_url, workflow_json: parsedWorkflowJson })
       .select('id, name, description').single();
     if (dbError) throw dbError;
 
