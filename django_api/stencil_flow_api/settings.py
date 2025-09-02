@@ -165,13 +165,17 @@ JWT_REFRESH_TOKEN_LIFETIME = 60 * 60 * 24 * 7  # 7 days in seconds
 # GitHub OAuth settings
 GITHUB_CLIENT_ID = config('GITHUB_CLIENT_ID', default='')
 GITHUB_CLIENT_SECRET = config('GITHUB_CLIENT_SECRET', default='')
+GITHUB_CALLBACK_URL = config('GITHUB_CALLBACK_URL', default='')
 
 # N8N settings
 DEFAULT_N8N_INSTANCE_URL = config('DEFAULT_N8N_INSTANCE_URL', default='')
 DEFAULT_N8N_API_KEY = config('DEFAULT_N8N_API_KEY', default='')
 
-# Site URL
+# Site URL (frontend)
 SITE_URL = config('SITE_URL', default='http://localhost:3000')
+
+# Server URL (backend for OAuth callbacks)
+SERVER_URL = config('SERVER_URL', default='http://localhost:8000')
 
 # AWS settings (for future use)
 AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default='')

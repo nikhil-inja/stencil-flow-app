@@ -107,6 +107,11 @@ class N8nInstance(models.Model):
                 fields=['space'], 
                 condition=models.Q(space__isnull=False),
                 name='unique_space_instance'
+            ),
+            # Ensure every N8N instance belongs to either a workspace or a space
+            models.CheckConstraint(
+                check=models.Q(workspace__isnull=False) | models.Q(space__isnull=False),
+                name='n8n_instance_must_have_workspace_or_space'
             )
         ]
 

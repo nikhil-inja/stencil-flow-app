@@ -13,21 +13,28 @@ urlpatterns = [
     # Authentication
     path('auth/signin/', views.AuthViewSet.as_view(), name='auth_signin'),
     path('auth/session/', views.SessionView.as_view(), name='auth_session'),
-    
+
+    # GitHub OAuth
+    path('auth/github/', views.github_oauth_redirect, name='github_oauth_redirect'),
+    path('auth/github/callback/', views.github_oauth_callback, name='github_oauth_callback'),
+    path('auth/github/connect/', views.github_connect, name='github_connect'),
+
     # Supabase Edge Function Equivalents
     path('functions/create-automation/', views.create_automation, name='create_automation'),
     path('functions/deploy-automation/', views.deploy_automation, name='deploy_automation'),
-    path('functions/invite-user/', views.invite_user, name='invite_user'),
-    path('functions/accept-invite/', views.accept_invite, name='accept_invite'),
+    # Temporarily commented out - multi-account workspaces not needed for now
+    # path('functions/invite-user/', views.invite_user, name='invite_user'),
+    # path('functions/accept-invite/', views.accept_invite, name='accept_invite'),
     path('functions/store-github-token/', views.store_github_token, name='store_github_token'),
     path('functions/check-github-connection/', views.check_github_connection, name='check_github_connection'),
     path('functions/list-n8n-workflows/', views.list_n8n_workflows, name='list_n8n_workflows'),
     path('functions/get-n8n-workflows/', views.get_n8n_workflows, name='get_n8n_workflows'),
     path('functions/get-n8n-workflow-details/', views.get_n8n_workflow_details, name='get_n8n_workflow_details'),
+    path('functions/get-workflow-versions/', views.get_workflow_versions, name='get_workflow_versions'),
     path('functions/get-commit-history/', views.get_commit_history, name='get_commit_history'),
     path('functions/update-automation/', views.update_automation, name='update_automation'),
     path('functions/rollback-automation/', views.rollback_automation, name='rollback_automation'),
-    path('functions/sync-automation/', views.sync_automation, name='sync_automation'),
+    path('functions/sync-automation-from-n8n/', views.sync_automation, name='sync_automation'),
     path('functions/toggle-workflow-activation/', views.toggle_workflow_activation, name='toggle_workflow_activation'),
     path('functions/update-deployed-workflow/', views.update_deployed_workflow, name='update_deployed_workflow'),
     path('functions/disconnect-github/', views.disconnect_github, name='disconnect_github'),

@@ -129,19 +129,16 @@ class InvitationSerializer(serializers.ModelSerializer):
 class CreateAutomationRequestSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True)
-    github_token = serializers.CharField()
     workflow_json = serializers.CharField()
 
 
 class DeployAutomationRequestSerializer(serializers.Serializer):
     automation_id = serializers.UUIDField()
     space_id = serializers.UUIDField()
-    github_token = serializers.CharField()
 
 
 class UpdateDeployedWorkflowRequestSerializer(serializers.Serializer):
     deployment_id = serializers.UUIDField()
-    github_token = serializers.CharField()
 
 
 class ToggleWorkflowActivationRequestSerializer(serializers.Serializer):
@@ -159,7 +156,6 @@ class AcceptInviteRequestSerializer(serializers.Serializer):
 
 class GetCommitHistoryRequestSerializer(serializers.Serializer):
     automation_id = serializers.UUIDField()
-    github_token = serializers.CharField()
 
 
 class UpdateAutomationRequestSerializer(serializers.Serializer):
@@ -183,3 +179,11 @@ class SyncAutomationFromN8nRequestSerializer(serializers.Serializer):
 class GitHubConnectionSerializer(serializers.Serializer):
     is_connected = serializers.BooleanField()
     username = serializers.CharField(required=False, allow_blank=True)
+
+
+class GitHubOAuthResponseSerializer(serializers.Serializer):
+    """Serializer for GitHub OAuth responses"""
+    access_token = serializers.CharField()
+    refresh_token = serializers.CharField()
+    user = UserSerializer()
+    profile = ProfileSerializer()

@@ -8,6 +8,7 @@ import base64
 from datetime import datetime
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.shortcuts import redirect
 from rest_framework import status, generics
 from rest_framework.decorators import api_view, permission_classes
 from django.views.decorators.csrf import csrf_exempt
@@ -21,7 +22,13 @@ from .models import (
 )
 from .serializers import *
 from .authentication import generate_jwt_token, generate_refresh_token
-from .utils import encrypt_token, decrypt_token, get_github_user_info
+from .utils import (
+    encrypt_token, decrypt_token, get_github_user_info, 
+    generate_oauth_state, validate_oauth_state, get_github_token_for_user,
+    ensure_workspace_repository, sync_existing_automations_to_repository,
+    create_workflow_version, get_workflow_version, list_workflow_versions, rollback_workflow_to_version,
+    delete_workflow_folder, GitHubAPIError
+)
 
 
 
@@ -76,6 +83,294 @@ class SessionView(APIView):
             })
 
 
+# GitHub OAuth Views
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def github_oauth_redirect(request):
+    """Initiate GitHub OAuth flow"""
+    try:
+        state = generate_oauth_state()
+        redirect_uri = f"{settings.SERVER_URL}/api/auth/github/callback/"
+        
+        oauth_params = {
+            'client_id': settings.GITHUB_CLIENT_ID,
+            'redirect_uri': redirect_uri,
+            'scope': 'repo,user',
+            'state': state,
+            'response_type': 'code'
+        }
+        
+        oauth_url = f"https://github.com/login/oauth/authorize?{'&'.join([f'{k}={v}' for k, v in oauth_params.items()])}"
+        
+        return redirect(oauth_url)
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to initiate GitHub OAuth: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def github_oauth_callback(request):
+    """Handle GitHub OAuth callback"""
+    try:
+        code = request.GET.get('code')
+        state = request.GET.get('state')
+        error = request.GET.get('error')
+        
+        if error:
+            return redirect(f"{settings.SITE_URL}/auth/callback?error={error}")
+        
+        if not code or not state:
+            return redirect(f"{settings.SITE_URL}/auth/callback?error=missing_parameters")
+        
+        # Validate state for CSRF protection
+        if not validate_oauth_state(state):
+            return redirect(f"{settings.SITE_URL}/auth/callback?error=invalid_state")
+        
+        # Exchange code for access token
+        token_url = "https://github.com/login/oauth/access_token"
+        token_data = {
+            'client_id': settings.GITHUB_CLIENT_ID,
+            'client_secret': settings.GITHUB_CLIENT_SECRET,
+            'code': code,
+            'redirect_uri': f"{settings.SERVER_URL}/api/auth/github/callback/",
+        }
+        
+        token_response = requests.post(token_url, data=token_data, headers={'Accept': 'application/json'})
+        token_json = token_response.json()
+        
+        if 'access_token' not in token_json:
+            return redirect(f"{settings.SITE_URL}/auth/callback?error=token_exchange_failed")
+        
+        github_token = token_json['access_token']
+        
+        # Get GitHub user info
+        github_user_info = get_github_user_info(github_token)
+        if not github_user_info:
+            return redirect(f"{settings.SITE_URL}/auth/callback?error=github_user_fetch_failed")
+        
+        # Create or get user
+        github_user_id = str(github_user_info['id'])
+        github_username = github_user_info['login']
+        github_email = github_user_info.get('email')
+        
+        if not github_email:
+            # Try to get primary email from GitHub API
+            email_response = requests.get(
+                'https://api.github.com/user/emails',
+                headers={'Authorization': f'token {github_token}'}
+            )
+            if email_response.ok:
+                emails = email_response.json()
+                primary_email = next((e['email'] for e in emails if e['primary']), None)
+                if primary_email:
+                    github_email = primary_email
+        
+        if not github_email:
+            return redirect(f"{settings.SITE_URL}/auth/callback?error=no_email_found")
+        
+        # Check if this GitHub account is already connected to a different user
+        existing_profile = None
+        try:
+            existing_profile = Profile.objects.get(github_user_id=github_user_id)
+            # If GitHub account exists but with different email, use the existing user
+            if existing_profile.user.email != github_email:
+                user = existing_profile.user
+                user_created = False
+                # Log this for debugging
+                print(f"GitHub account {github_username} already connected to user {user.email}, using existing account")
+            else:
+                # Same GitHub account, same email - normal flow
+                user, user_created = User.objects.get_or_create(
+                    email=github_email,
+                    defaults={
+                        'username': github_username,
+                        'first_name': github_user_info.get('name', '').split(' ')[0] if github_user_info.get('name') else '',
+                        'last_name': ' '.join(github_user_info.get('name', '').split(' ')[1:]) if github_user_info.get('name') and len(github_user_info.get('name', '').split(' ')) > 1 else '',
+                    }
+                )
+        except Profile.DoesNotExist:
+            # GitHub account not connected to any user yet - normal flow
+            user, user_created = User.objects.get_or_create(
+                email=github_email,
+                defaults={
+                    'username': github_username,
+                    'first_name': github_user_info.get('name', '').split(' ')[0] if github_user_info.get('name') else '',
+                    'last_name': ' '.join(github_user_info.get('name', '').split(' ')[1:]) if github_user_info.get('name') and len(github_user_info.get('name', '').split(' ')) > 1 else '',
+                }
+            )
+        
+        # Get or create workspace for new users
+        if user_created:
+            workspace = Workspace.objects.create(
+                name=f"{github_username}'s Workspace",
+                description=f"Workspace for {github_username}"
+            )
+        else:
+            workspace = user.profile.workspace if hasattr(user, 'profile') else None
+            if not workspace:
+                workspace = Workspace.objects.create(
+                    name=f"{github_username}'s Workspace",
+                    description=f"Workspace for {github_username}"
+                )
+        
+        # Get or create profile
+        if existing_profile and existing_profile.user == user:
+            # Use existing profile, just update the workspace reference if needed
+            profile = existing_profile
+            profile_created = False
+            if not profile.workspace:
+                profile.workspace = workspace
+                profile.save()
+        else:
+            # Create new profile or get existing one for this user
+            profile, profile_created = Profile.objects.get_or_create(
+                user=user,
+                defaults={
+                    'full_name': github_user_info.get('name', ''),
+                    'avatar_url': github_user_info.get('avatar_url'),
+                    'github_user_id': github_user_id,
+                    'github_username': github_username,
+                    'workspace': workspace,
+                }
+            )
+        
+        # Update profile if it already exists
+        if not profile_created:
+            profile.github_user_id = github_user_id
+            profile.github_username = github_username
+            if github_user_info.get('name'):
+                profile.full_name = github_user_info['name']
+            if github_user_info.get('avatar_url'):
+                profile.avatar_url = github_user_info['avatar_url']
+            profile.save()
+        
+        # Store encrypted GitHub token
+        encrypted_token = encrypt_token(github_token)
+        GitHubToken.objects.update_or_create(
+            user=user,
+            defaults={'encrypted_token': encrypted_token}
+        )
+        
+        # Auto-create repository for workspace if it doesn't exist
+        try:
+            if workspace and not workspace.git_repository:
+                repo_url = ensure_workspace_repository(user, workspace)
+                print(f"Auto-created repository: {repo_url}")
+            elif workspace and workspace.git_repository:
+                # Repository exists, sync existing automations
+                try:
+                    synced_automations = sync_existing_automations_to_repository(user, workspace)
+                    print(f"Synced {len(synced_automations)} existing automations to repository")
+                except GitHubAPIError as e:
+                    print(f"Automation sync failed: {str(e)}")
+        except GitHubAPIError as e:
+            print(f"Repository creation failed: {str(e)}")
+        
+        # Generate JWT tokens
+        access_token = generate_jwt_token(user)
+        refresh_token = generate_refresh_token(user)
+        
+        # Redirect to frontend with tokens
+        callback_url = f"{settings.SITE_URL}/auth/callback?access_token={access_token}&refresh_token={refresh_token}"
+        return redirect(callback_url)
+        
+    except Exception as e:
+        return redirect(f"{settings.SITE_URL}/auth/callback?error=server_error")
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def github_connect(request):
+    """Connect existing user account to GitHub"""
+    try:
+        github_token = request.data.get('github_token')
+        if not github_token:
+            return Response({'error': 'GitHub token required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Verify token and get user info
+        github_user_info = get_github_user_info(github_token)
+        if not github_user_info:
+            return Response({'error': 'Invalid GitHub token'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        github_user_id = str(github_user_info['id'])
+        
+        # Check if this GitHub account is already connected to a different user
+        try:
+            existing_profile = Profile.objects.get(github_user_id=github_user_id)
+            if existing_profile.user != request.user:
+                return Response({
+                    'error': 'This GitHub account is already connected to another user account'
+                }, status=status.HTTP_409_CONFLICT)
+        except Profile.DoesNotExist:
+            pass  # GitHub account not connected yet, which is what we want
+        
+        # Update profile with GitHub info
+        profile = request.user.profile
+        profile.github_user_id = str(github_user_info['id'])
+        profile.github_username = github_user_info['login']
+        if github_user_info.get('name'):
+            profile.full_name = github_user_info['name']
+        if github_user_info.get('avatar_url'):
+            profile.avatar_url = github_user_info['avatar_url']
+        profile.save()
+        
+        # Store encrypted GitHub token
+        encrypted_token = encrypt_token(github_token)
+        GitHubToken.objects.update_or_create(
+            user=request.user,
+            defaults={'encrypted_token': encrypted_token}
+        )
+        
+        # Auto-create repository for workspace if it doesn't exist
+        try:
+            workspace = profile.workspace
+            if workspace and not workspace.git_repository:
+                repo_url = ensure_workspace_repository(request.user, workspace)
+                return Response({
+                    'message': 'GitHub account connected successfully and repository created',
+                    'profile': ProfileSerializer(profile).data,
+                    'repository_created': True,
+                    'repository_url': repo_url
+                })
+            elif workspace and workspace.git_repository:
+                # Repository exists, sync existing automations
+                try:
+                    synced_automations = sync_existing_automations_to_repository(request.user, workspace)
+                    return Response({
+                        'message': 'GitHub account connected successfully and existing automations synced',
+                        'profile': ProfileSerializer(profile).data,
+                        'automations_synced': True,
+                        'synced_count': len(synced_automations)
+                    })
+                except GitHubAPIError as e:
+                    return Response({
+                        'message': 'GitHub account connected successfully',
+                        'profile': ProfileSerializer(profile).data,
+                        'warning': f'Automation sync failed: {str(e)}'
+                    })
+        except GitHubAPIError as e:
+            return Response({
+                'message': 'GitHub account connected successfully',
+                'profile': ProfileSerializer(profile).data,
+                'warning': f'Repository creation failed: {str(e)}'
+            })
+        
+        return Response({
+            'message': 'GitHub account connected successfully',
+            'profile': ProfileSerializer(profile).data
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to connect GitHub account: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
 # Supabase Edge Function Equivalents
 @csrf_exempt
 @api_view(['POST'])
@@ -90,8 +385,15 @@ def create_automation(request):
         data = serializer.validated_data
         name = data['name']
         description = data.get('description', '')
-        github_token = data['github_token']
         workflow_json = data['workflow_json']
+        
+        # Get stored GitHub token for user
+        github_token = get_github_token_for_user(request.user)
+        if not github_token:
+            return Response(
+                {'error': 'GitHub account not connected. Please connect your GitHub account first.'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
         
         # Parse workflow JSON
         try:
@@ -103,9 +405,14 @@ def create_automation(request):
         profile = get_object_or_404(Profile, user=request.user)
         workspace = profile.workspace
         
-        # For development: Allow automation creation without Git repository
-        # In production, this should be properly configured
-        if not workspace.git_repository:
+        # Ensure workspace has a GitHub repository
+        try:
+            repo_url = ensure_workspace_repository(request.user, workspace)
+        except GitHubAPIError as e:
+            return Response(
+                {'error': f'GitHub repository setup failed: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
             # Create automation record without Git operations
             automation = Automation.objects.create(
                 name=name,
@@ -226,11 +533,29 @@ def deploy_automation(request):
         data = serializer.validated_data
         automation_id = data['automation_id']
         space_id = data['space_id']
-        github_token = data['github_token']
+        
+        # Get stored GitHub token for user
+        github_token = get_github_token_for_user(request.user)
+        if not github_token:
+            return Response(
+                {'error': 'GitHub account not connected. Please connect your GitHub account first.'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
         
         # Get automation, space, and n8n instance details
         automation = get_object_or_404(Automation, id=automation_id)
         space = get_object_or_404(Space, id=space_id)
+        
+        # Ensure workspace has a GitHub repository
+        try:
+            profile = get_object_or_404(Profile, user=request.user)
+            workspace = profile.workspace
+            repo_url = ensure_workspace_repository(request.user, workspace)
+        except GitHubAPIError as e:
+            return Response(
+                {'error': f'GitHub repository setup failed: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
         # Try to get space-specific instance first, then fall back to workspace master instance
         instance = None
@@ -553,9 +878,13 @@ def list_n8n_workflows(request):
                 return Response({
                     'error': 'Invalid N8N API key. Please check your credentials in Settings.'
                 }, status=status.HTTP_400_BAD_REQUEST)
+            elif response.status_code >= 500:
+                return Response({
+                    'error': 'N8N server is currently unavailable. Please try again later.'
+                }, status=status.HTTP_400_BAD_REQUEST)
             elif response.status_code != 200:
                 return Response({
-                    'error': f'N8N API error: {response.status_code} - {response.text}'
+                    'error': 'Failed to connect to N8N instance. Please check your N8N configuration.'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
             workflows_data = response.json()
@@ -575,9 +904,17 @@ def list_n8n_workflows(request):
                 'data': workflows
             })
             
+        except requests.exceptions.ConnectionError:
+            return Response({
+                'error': 'Failed to connect to N8N instance. Please check your N8N URL and network connection.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except requests.exceptions.Timeout:
+            return Response({
+                'error': 'N8N instance connection timed out. Please try again later.'
+            }, status=status.HTTP_400_BAD_REQUEST)
         except requests.exceptions.RequestException as e:
             return Response({
-                'error': f'Failed to connect to N8N instance: {str(e)}'
+                'error': 'Failed to connect to N8N instance. Please check your N8N configuration.'
             }, status=status.HTTP_400_BAD_REQUEST)
         
     except Exception as e:
@@ -677,20 +1014,144 @@ def get_n8n_workflow_details(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def get_commit_history(request):
-    """Equivalent to get-commit-history Supabase function"""
+def get_workflow_versions(request):
+    """Get all available versions for a workflow"""
     try:
         automation_id = request.data.get('automation_id')
-        github_token = request.data.get('github_token')
         
         if not automation_id:
             return Response({'error': 'automation_id is required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # TODO: Implement GitHub API integration for commit history
-        return Response({
-            'commits': [],
-            'message': 'GitHub integration not yet implemented'
-        })
+        # Get stored GitHub token for user
+        github_token = get_github_token_for_user(request.user)
+        if not github_token:
+            return Response(
+                {'error': 'GitHub account not connected. Please connect your GitHub account first.'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        # Get automation details
+        automation = get_object_or_404(Automation, id=automation_id)
+        
+        # Ensure workspace has a GitHub repository
+        try:
+            profile = get_object_or_404(Profile, user=request.user)
+            workspace = profile.workspace
+            repo_url = ensure_workspace_repository(request.user, workspace)
+        except GitHubAPIError as e:
+            return Response(
+                {'error': f'GitHub repository setup failed: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Extract repo path from URL
+        repo_path = automation.git_repository.replace('https://github.com/', '')
+        
+        # Get workflow versions
+        try:
+            versions = list_workflow_versions(
+                github_token=github_token,
+                repo_path=repo_path,
+                automation_name=automation.name
+            )
+            
+            return Response({
+                'versions': versions,
+                'automation_name': automation.name
+            }, status=status.HTTP_200_OK)
+            
+        except GitHubAPIError as e:
+            return Response(
+                {'error': f'Failed to get workflow versions: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_commit_history(request):
+    """Equivalent to get-commit-history Supabase function"""
+    try:
+        automation_id = request.data.get('automation_id')
+        
+        if not automation_id:
+            return Response({'error': 'automation_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get stored GitHub token for user
+        github_token = get_github_token_for_user(request.user)
+        if not github_token:
+            return Response(
+                {'error': 'GitHub account not connected. Please connect your GitHub account first.'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        # Get automation details
+        automation = get_object_or_404(Automation, id=automation_id)
+        
+        # Ensure workspace has a GitHub repository
+        try:
+            profile = get_object_or_404(Profile, user=request.user)
+            workspace = profile.workspace
+            repo_url = ensure_workspace_repository(request.user, workspace)
+        except GitHubAPIError as e:
+            return Response(
+                {'error': f'GitHub repository setup failed: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Extract repo path from URL
+        repo_path = automation.git_repository.replace('https://github.com/', '')
+        
+        # Build the definition file path
+        automation_folder = automation.name.lower().replace(' ', '-').replace('_', '-')
+        automation_folder = ''.join(c for c in automation_folder if c.isalnum() or c in '-')
+        definition_file_path = f"workflows/{automation_folder}/definition.json"
+        
+        # Call GitHub API to get commit history for the specific file
+        commits_url = f"https://api.github.com/repos/{repo_path}/commits?path={definition_file_path}"
+        
+        try:
+            commits_response = requests.get(
+                commits_url,
+                headers={
+                    'Authorization': f'token {github_token}',
+                    'Accept': 'application/vnd.github.v3+json',
+                }
+            )
+            
+            if not commits_response.ok:
+                error_body = commits_response.json()
+                return Response(
+                    {'error': f'GitHub Commits API Error: {error_body.get("message", "Unknown error")}'}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            commits_data = commits_response.json()
+            
+            # Simplify the data to send back (matching the original Supabase function)
+            history = []
+            for commit in commits_data:
+                history.append({
+                    'sha': commit['sha'],
+                    'message': commit['commit']['message'],
+                    'author': commit['commit']['author']['name'],
+                    'date': commit['commit']['author']['date'],
+                })
+            
+            return Response({
+                'commits': history,
+                'automation_name': automation.name,
+                'file_path': definition_file_path
+            }, status=status.HTTP_200_OK)
+            
+        except requests.exceptions.RequestException as e:
+            return Response(
+                {'error': f'Failed to fetch commit history: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -702,13 +1163,112 @@ def update_automation(request):
     """Equivalent to update-automation Supabase function"""
     try:
         automation_id = request.data.get('automation_id')
-        if not automation_id:
-            return Response({'error': 'automationId is required'}, status=status.HTTP_400_BAD_REQUEST)
+        description = request.data.get('description')
+        workflow_json = request.data.get('workflow_json')
         
-        # TODO: Implement automation update logic
+        if not automation_id or not workflow_json:
+            return Response({'error': 'automation_id and workflow_json are required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get stored GitHub token for user
+        github_token = get_github_token_for_user(request.user)
+        if not github_token:
+            return Response(
+                {'error': 'GitHub account not connected. Please connect your GitHub account first.'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        # Get automation details
+        automation = get_object_or_404(Automation, id=automation_id)
+        
+        # Ensure workspace has a GitHub repository
+        try:
+            profile = get_object_or_404(Profile, user=request.user)
+            workspace = profile.workspace
+            repo_url = ensure_workspace_repository(request.user, workspace)
+        except GitHubAPIError as e:
+            return Response(
+                {'error': f'GitHub repository setup failed: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Extract repo path from URL
+        repo_path = automation.git_repository.replace('https://github.com/', '')
+        
+        # Build the definition file path
+        automation_folder = automation.name.lower().replace(' ', '-').replace('_', '-')
+        automation_folder = ''.join(c for c in automation_folder if c.isalnum() or c in '-')
+        definition_file_path = f"workflows/{automation_folder}/definition.json"
+        
+        # Get current file SHA from GitHub
+        get_file_url = f"https://api.github.com/repos/{repo_path}/contents/{definition_file_path}"
+        get_file_response = requests.get(
+            get_file_url,
+            headers={
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github.v3+json',
+            }
+        )
+        
+        if not get_file_response.ok:
+            return Response(
+                {'error': 'Could not find original workflow file in GitHub'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        file_data = get_file_response.json()
+        current_sha = file_data['sha']
+        
+        # Create a version of the current workflow before updating
+        try:
+            version_info = create_workflow_version(
+                github_token=github_token,
+                repo_path=repo_path,
+                automation_name=automation.name,
+                workflow_json=automation.workflow_json,
+                version_comment="Manual update version"
+            )
+            print(f"Created version {version_info['version']} before manual update")
+        except Exception as e:
+            print(f"Warning: Failed to create version before manual update: {str(e)}")
+        
+        # Update the file in GitHub
+        stringified_json = json.dumps(workflow_json, indent=2)
+        content_encoded = base64.b64encode(stringified_json.encode()).decode()
+        
+        update_data = {
+            'message': f'Update workflow: {automation.name} - {datetime.now().isoformat()}',
+            'content': content_encoded,
+            'sha': current_sha
+        }
+        
+        update_response = requests.put(
+            get_file_url,
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github.v3+json',
+            },
+            json=update_data
+        )
+        
+        if not update_response.ok:
+            error_body = update_response.json()
+            return Response(
+                {'error': f'GitHub Commit Error: {error_body.get("message", "Unknown error")}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Update the automation in the database
+        if description is not None:
+            automation.description = description
+        automation.workflow_json = workflow_json
+        automation.save()
+        
         return Response({
-            'message': 'Automation update not yet implemented'
-        })
+            'message': 'Automation updated successfully!',
+            'automation_name': automation.name,
+            'file_path': definition_file_path
+        }, status=status.HTTP_200_OK)
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -720,15 +1280,60 @@ def rollback_automation(request):
     """Equivalent to rollback-automation Supabase function"""
     try:
         automation_id = request.data.get('automation_id')
-        commit_sha = request.data.get('commit_sha')
+        version_timestamp = request.data.get('version_timestamp')
         
-        if not automation_id or not commit_sha:
-            return Response({'error': 'automation_id and commit_sha are required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not automation_id or not version_timestamp:
+            return Response({'error': 'automation_id and version_timestamp are required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # TODO: Implement rollback logic
-        return Response({
-            'message': 'Automation rollback not yet implemented'
-        })
+        # Get stored GitHub token for user
+        github_token = get_github_token_for_user(request.user)
+        if not github_token:
+            return Response(
+                {'error': 'GitHub account not connected. Please connect your GitHub account first.'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        # Get automation details
+        automation = get_object_or_404(Automation, id=automation_id)
+        
+        # Ensure workspace has a GitHub repository
+        try:
+            profile = get_object_or_404(Profile, user=request.user)
+            workspace = profile.workspace
+            repo_url = ensure_workspace_repository(request.user, workspace)
+        except GitHubAPIError as e:
+            return Response(
+                {'error': f'GitHub repository setup failed: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Extract repo path from URL
+        repo_path = automation.git_repository.replace('https://github.com/', '')
+        
+        # Rollback to the specified version
+        try:
+            rollback_result = rollback_workflow_to_version(
+                github_token=github_token,
+                repo_path=repo_path,
+                automation_name=automation.name,
+                version_timestamp=version_timestamp
+            )
+            
+            # Update the automation in the database
+            automation.workflow_json = rollback_result['workflow']
+            automation.save()
+            
+            return Response({
+                'message': f'Successfully rolled back {automation.name} to version {version_timestamp}',
+                'version': version_timestamp,
+                'workflow': rollback_result['workflow']
+            }, status=status.HTTP_200_OK)
+            
+        except GitHubAPIError as e:
+            return Response(
+                {'error': f'Rollback failed: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -740,10 +1345,17 @@ def sync_automation(request):
     """Equivalent to sync-automation Supabase function"""
     try:
         automation_id = request.data.get('automation_id')
-        github_token = request.data.get('github_token')
         
         if not automation_id:
             return Response({'error': 'automation_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get stored GitHub token for user
+        github_token = get_github_token_for_user(request.user)
+        if not github_token:
+            return Response(
+                {'error': 'GitHub account not connected. Please connect your GitHub account first.'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
         
         # Get automation details
         automation = get_object_or_404(Automation, id=automation_id)
@@ -751,6 +1363,15 @@ def sync_automation(request):
         # Get user profile and workspace for master N8N instance
         profile = get_object_or_404(Profile, user=request.user)
         workspace = profile.workspace
+        
+        # Ensure workspace has a GitHub repository
+        try:
+            repo_url = ensure_workspace_repository(request.user, workspace)
+        except GitHubAPIError as e:
+            return Response(
+                {'error': f'GitHub repository setup failed: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
         # Get master N8N instance
         try:
@@ -790,6 +1411,19 @@ def sync_automation(request):
             # Commit the updated workflow to GitHub repository
             repo_path = automation.git_repository.replace('https://github.com/', '')
             definition_file_path = f"{automation.workflow_path}/definition.json"
+            
+            # Create a version of the current workflow before updating
+            try:
+                version_info = create_workflow_version(
+                    github_token=github_token,
+                    repo_path=repo_path,
+                    automation_name=automation.name,
+                    workflow_json=automation.workflow_json,
+                    version_comment="Pre-sync version from N8N"
+                )
+                print(f"Created version {version_info['version']} before sync")
+            except Exception as e:
+                print(f"Warning: Failed to create version before sync: {str(e)}")
             
             # Get current file to get SHA
             get_file_url = f"https://api.github.com/repos/{repo_path}/contents/{definition_file_path}"
@@ -889,9 +1523,33 @@ def toggle_workflow_activation(request):
         )
         
         if not n8n_response.ok:
-            return Response({
-                'error': f'N8N API Error (Status {n8n_response.status_code}): {n8n_response.text}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Check for specific N8N error about missing trigger nodes
+            if n8n_response.status_code == 400:
+                try:
+                    error_text = n8n_response.text
+                    # Check if the error mentions missing trigger/webhook/poller nodes
+                    if ("has no node to start the workflow" in error_text and 
+                        ("trigger" in error_text or "poller" in error_text or "webhook" in error_text)):
+                        return Response({
+                            'error': 'No toggleable trigger in workflow'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                except:
+                    # If we can't parse the error, fall through to generic handling
+                    pass
+            
+            # Handle other connection errors with user-friendly messages
+            if n8n_response.status_code == 401:
+                return Response({
+                    'error': 'Invalid N8N API key. Please check your N8N credentials in Settings.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            elif n8n_response.status_code >= 500:
+                return Response({
+                    'error': 'N8N server is currently unavailable. Please try again later.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                return Response({
+                    'error': f'Failed to {action} workflow. Please check your N8N configuration.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # Update deployment status in database
         deployment.is_active = (action == 'activate')
@@ -914,16 +1572,34 @@ def update_deployed_workflow(request):
     """Equivalent to update-deployed-workflow Supabase function"""
     try:
         deployment_id = request.data.get('deployment_id')
-        github_token = request.data.get('github_token')
         
         if not deployment_id:
             return Response({'error': 'deployment_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get stored GitHub token for user
+        github_token = get_github_token_for_user(request.user)
+        if not github_token:
+            return Response(
+                {'error': 'GitHub account not connected. Please connect your GitHub account first.'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
         
         # Get deployment details with related automation and space
         deployment = get_object_or_404(
             Deployment.objects.select_related('automation', 'space'), 
             id=deployment_id
         )
+        
+        # Ensure workspace has a GitHub repository
+        try:
+            profile = get_object_or_404(Profile, user=request.user)
+            workspace = profile.workspace
+            repo_url = ensure_workspace_repository(request.user, workspace)
+        except GitHubAPIError as e:
+            return Response(
+                {'error': f'GitHub repository setup failed: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
         automation = deployment.automation
         space = deployment.space
@@ -957,10 +1633,56 @@ def update_deployed_workflow(request):
             'settings': automation.workflow_json.get('settings', {})
         }
         
-        # Make PUT request to update the workflow in N8N
         n8n_url = instance.instance_url.rstrip('/')
         target_url = f"{n8n_url}/api/v1/workflows/{deployment.n8n_workflow_id}"
         
+        # First, check if the workflow still exists in N8N
+        check_response = requests.get(
+            target_url,
+            headers={'X-N8N-API-KEY': instance.api_key}
+        )
+        
+        # If workflow doesn't exist (404), re-deploy it as a new workflow
+        if check_response.status_code == 404:
+            # Workflow was deleted from N8N instance, re-deploy it
+            create_url = f"{n8n_url}/api/v1/workflows"
+            
+            create_response = requests.post(
+                create_url,
+                headers={
+                    'Content-Type': 'application/json',
+                    'X-N8N-API-KEY': instance.api_key
+                },
+                json=workflow_to_update
+            )
+            
+            if not create_response.ok:
+                return Response({
+                    'error': f'Failed to re-deploy missing workflow. N8N API Error (Status {create_response.status_code}): {create_response.text}'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # Update deployment with new workflow ID
+            create_data = create_response.json()
+            new_workflow_id = create_data['id']
+            old_workflow_id = deployment.n8n_workflow_id
+            deployment.n8n_workflow_id = new_workflow_id
+            deployment.save()
+            
+            return Response({
+                'message': f'Workflow was missing from N8N instance and has been re-deployed as \'{automation.name}\'!',
+                'deployment_id': str(deployment.id),
+                'old_n8n_workflow_id': old_workflow_id,
+                'new_n8n_workflow_id': new_workflow_id,
+                'action': 're-deployed'
+            }, status=status.HTTP_200_OK)
+            
+        elif not check_response.ok:
+            # Some other error occurred while checking
+            return Response({
+                'error': f'N8N API Error checking workflow existence (Status {check_response.status_code}): {check_response.text}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Workflow exists, proceed with normal update
         n8n_response = requests.put(
             target_url,
             headers={
@@ -972,7 +1694,7 @@ def update_deployed_workflow(request):
         
         if not n8n_response.ok:
             return Response({
-                'error': f'N8N API Error (Status {n8n_response.status_code}): {n8n_response.text}'
+                'error': f'N8N API Error updating workflow (Status {n8n_response.status_code}): {n8n_response.text}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # Optional: Verify the update by fetching the workflow back
@@ -1122,6 +1844,66 @@ class AutomationDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
         return Automation.objects.filter(workspace=profile.workspace)
+    
+    def perform_destroy(self, instance):
+        """Override to also delete the workflow folder from GitHub repository"""
+        try:
+            print(f"Starting deletion of automation: {instance.name} (ID: {instance.id})")
+            print(f"GitHub repository: {instance.git_repository}")
+            
+            # Get GitHub token for user
+            github_token = get_github_token_for_user(self.request.user)
+            print(f"GitHub token obtained: {'Yes' if github_token else 'No'}")
+            
+            if github_token and instance.git_repository:
+                # Extract repo path from URL
+                repo_path = instance.git_repository.replace('https://github.com/', '')
+                print(f"Extracted repo path: {repo_path}")
+                
+                # Test token permissions first
+                try:
+                    test_url = f"https://api.github.com/repos/{repo_path}"
+                    test_response = requests.get(test_url, headers={'Authorization': f'token {github_token}'})
+                    print(f"Repository access test: Status {test_response.status_code}")
+                    if test_response.status_code == 200:
+                        repo_data = test_response.json()
+                        print(f"Repository permissions: {repo_data.get('permissions', {})}")
+                    else:
+                        print(f"Repository access failed: {test_response.text}")
+                except Exception as e:
+                    print(f"Error testing repository access: {str(e)}")
+                
+                # Delete the workflow folder from GitHub repository
+                try:
+                    print(f"Calling delete_workflow_folder for {instance.name}")
+                    delete_workflow_folder(
+                        github_token=github_token,
+                        repo_path=repo_path,
+                        automation_name=instance.name
+                    )
+                    print(f"Successfully deleted workflow folder for {instance.name} from GitHub repository")
+                except GitHubAPIError as e:
+                    print(f"Warning: Failed to delete workflow folder from GitHub: {str(e)}")
+                    # Continue with database deletion even if GitHub deletion fails
+                except Exception as e:
+                    print(f"Warning: Unexpected error deleting workflow folder: {str(e)}")
+                    # Continue with database deletion even if GitHub deletion fails
+            else:
+                print(f"No GitHub connection or repository found for automation {instance.name}")
+                if not github_token:
+                    print("  - No GitHub token available")
+                if not instance.git_repository:
+                    print("  - No git_repository field set")
+            
+            # Delete the automation from database (this will cascade to deployments)
+            print(f"Deleting automation from database: {instance.name}")
+            instance.delete()
+            print(f"Successfully deleted automation from database: {instance.name}")
+            
+        except Exception as e:
+            print(f"Error in perform_destroy: {str(e)}")
+            # Re-raise the exception to maintain the original behavior
+            raise
 
 
 class SpaceListCreateView(generics.ListCreateAPIView):
@@ -1158,7 +1940,46 @@ class N8nInstanceListCreateView(generics.ListCreateAPIView):
     
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
-        return N8nInstance.objects.filter(workspace=profile.workspace)
+        queryset = N8nInstance.objects.filter(workspace=profile.workspace)
+        
+        # Filter by space_id if provided in query parameters
+        space_id = self.request.query_params.get('space_id')
+        if space_id:
+            # Return instances for the specific space
+            queryset = queryset.filter(space_id=space_id)
+        
+        return queryset
+    
+    def perform_create(self, serializer):
+        from rest_framework import status
+        from rest_framework.exceptions import ValidationError
+        
+        profile = get_object_or_404(Profile, user=self.request.user)
+        workspace = profile.workspace
+        
+        # Get space_id from request data if provided
+        space_id = self.request.data.get('space_id')
+        
+        if space_id:
+            # Creating space-specific instance
+            space = get_object_or_404(Space, id=space_id, workspace=workspace)
+            
+            # Check if space already has an N8N instance
+            if N8nInstance.objects.filter(space=space).exists():
+                raise ValidationError({
+                    'space_id': ['This space already has an N8N instance configured.']
+                })
+            
+            serializer.save(workspace=workspace, space=space)
+        else:
+            # Creating master instance (no space)
+            # Check if workspace already has a master instance
+            if N8nInstance.objects.filter(workspace=workspace, space__isnull=True).exists():
+                raise ValidationError({
+                    'non_field_errors': ['This workspace already has a master N8N instance. Use the settings page to update it.']
+                })
+            
+            serializer.save(workspace=workspace, space=None)
 
 
 class DeploymentListView(generics.ListAPIView):
