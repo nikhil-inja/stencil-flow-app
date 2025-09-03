@@ -73,7 +73,6 @@ export default function ImportPage() {
         headers: { Authorization: `Bearer ${session.access_token}` },
         body: { 
             workflow_id: workflow.id,
-            github_token: 'placeholder_token' // TODO: Implement GitHub OAuth
         },
       });
       if (detailsError) throw detailsError;
@@ -84,7 +83,6 @@ export default function ImportPage() {
         body: {
           name: workflow.name, // Use the workflow name from the list, not fullWorkflow
           description: `Imported from n8n on ${new Date().toLocaleDateString()}`,
-          github_token: 'placeholder_token', // TODO: Implement GitHub OAuth
           workflow_json: JSON.stringify(fullWorkflow), // Pass the full object as a string
         },
       });

@@ -1,8 +1,9 @@
 // src/pages/EditAutomationPage.tsx
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { apiClient } from '@/lib/apiClient';
+import { config } from '@/config';
 import toast from 'react-hot-toast';
 
 // Import Shadcn components
@@ -12,17 +13,28 @@ import { Textarea } from "@/shared/components/ui/textarea";
 import { Label } from "@/shared/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 
-// Define the shape of a commit object
-interface Commit {
+// Define the shape of a workflow version object
+interface WorkflowVersion {
+  version: string;
+  file_path: string;
   sha: string;
-  message: string;
-  author: string;
-  date: string;
+  size: number;
+  updated_at: string;
 }
 
 export default function EditAutomationPage() {
   const { automationId } = useParams<{ automationId: string }>();
+  
+  // Simple test - if this doesn't render, there's a basic component issue
+  if (!automationId) {
+    return <div>No automation ID in URL</div>;
+  }
+
+  // Temporary test render to check if basic rendering works
+  // return <div>Simple test render for automation: {automationId}</div>;
+  
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [rollingBackSha, setRollingBackSha] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -31,50 +43,101 @@ export default function EditAutomationPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [workflowJson, setWorkflowJson] = useState('');
-  const [history, setHistory] = useState<Commit[]>([]);
+  const [versions, setVersions] = useState<WorkflowVersion[]>([]);
+
+  // Debug logging
+  console.log('EditAutomationPage render:', { 
+    automationId, 
+    loading, 
+    error, 
+    name, 
+    hasWorkflowJson: !!workflowJson,
+    versionsLength: versions.length 
+  });
 
   // We will define this as a standalone function to reuse it
-  const fetchAllData = async () => {
-    if (!automationId) return;
+  const fetchAllData = useCallback(async () => {
+    console.log('fetchAllData called with automationId:', automationId);
+    
+    if (!automationId) {
+      console.log('No automation ID provided');
+      setError('No automation ID provided');
+      setLoading(false);
+      return;
+    }
+    
     setLoading(true);
+    setError(null);
     
     try {
-      const { data: automationData, error: automationError } = await apiClient
-        .from('automations')
-        .select('name, description, workflow_json')
-        .eq('id', automationId)
-        .single();
+      console.log('Fetching automation data...');
+      // Fetch automation data using direct API call
+      const automationResponse = await fetch(`${config.API_BASE_URL}/automations/${automationId}/`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
 
-      if (automationError) throw automationError;
+      console.log('Automation response status:', automationResponse.status);
+
+      if (!automationResponse.ok) {
+        if (automationResponse.status === 404) {
+          console.log('Automation not found (404)');
+          setError('Automation not found');
+          return;
+        }
+        if (automationResponse.status === 401) {
+          console.log('Unauthorized (401)');
+          setError('You are not authorized to view this automation');
+          return;
+        }
+        const errorData = await automationResponse.json();
+        throw new Error(errorData.error || errorData.detail || 'Failed to fetch automation');
+      }
+
+      const automationData = await automationResponse.json();
+      console.log('Automation data received:', automationData);
       
       if (automationData) {
+        console.log('Setting automation data...');
         setName(automationData.name);
         setDescription(automationData.description || '');
         setWorkflowJson(JSON.stringify(automationData.workflow_json, null, 2));
       }
 
+      // Fetch workflow versions using function endpoint
       const { data: sessionData } = await apiClient.auth.getSession();
       if (sessionData?.session) { 
-        const { data: commitHistory, error: historyError } = await apiClient.functions.invoke('get-commit-history', {
+        const { data: workflowVersions, error: versionsError } = await apiClient.functions.invoke('get-workflow-versions', {
           headers: { 'Authorization': `Bearer ${sessionData.session.access_token}` },
           body: { 
-            automation_id: automationId,
-            github_token: 'placeholder_token' // TODO: Implement GitHub OAuth
+            automation_id: automationId
           }, 
         });
-        if (historyError) throw historyError;
-        setHistory(commitHistory);
+        if (versionsError) {
+          console.warn('Failed to load workflow versions:', versionsError);
+          setVersions([]); // Set empty array instead of failing
+        } else {
+          // Ensure we always set an array, even if the API returns something else
+          const versionsArray = Array.isArray(workflowVersions?.versions) ? workflowVersions.versions : [];
+          console.log('Setting versions to:', versionsArray);
+          setVersions(versionsArray);
+        }
       }
     } catch (e: any) {
-      toast.error(`Failed to load page data: ${e.message}`);
+      console.error('Error loading automation data:', e);
+      setError(`Failed to load automation: ${e.message}`);
+      toast.error(`Failed to load automation: ${e.message}`);
     } finally {
+        console.log('Setting loading to false');
         setLoading(false);
     }
-  };
+  }, [automationId]);
 
   useEffect(() => {
     fetchAllData();
-  }, [automationId]);
+  }, [fetchAllData]);
   
   const handleSaveChanges = async (event: FormEvent) => {
     event.preventDefault();
@@ -99,7 +162,6 @@ export default function EditAutomationPage() {
           automation_id: automationId,
           description,
           workflow_json: parsedJson,
-          github_token: 'placeholder_token', // TODO: Implement GitHub OAuth
         },
       });
   
@@ -114,11 +176,11 @@ export default function EditAutomationPage() {
     }
   };
 
-  const handleRollback = async (commitSha: string) => {
+  const handleRollback = async (versionTimestamp: string) => {
     if (!window.confirm(`Are you sure you want to roll back to this version? Your current edits will be lost.`)) {
       return;
     }
-    setRollingBackSha(commitSha);
+    setRollingBackSha(versionTimestamp);
     try {
       const { data: sessionData } = await apiClient.auth.getSession();
       if (!sessionData?.session) throw new Error("You must be logged in.");
@@ -127,8 +189,7 @@ export default function EditAutomationPage() {
         headers: { 'Authorization': `Bearer ${sessionData.session.access_token}` },
         body: {
           automation_id: automationId,
-          commit_sha: commitSha,
-          github_token: 'placeholder_token', // TODO: Implement GitHub OAuth
+          version_timestamp: versionTimestamp,
         },
       });
   
@@ -147,32 +208,69 @@ export default function EditAutomationPage() {
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-        const { data: sessionData } = await apiClient.auth.getSession();
-        if (!sessionData?.session) {
-          throw new Error("You must be logged in to sync.");
-        }
-
-        const { data, error } = await apiClient.functions.invoke('sync-automation-from-n8n', {
-            headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
-            body: { 
-                automation_id: automationId,
-                github_token: 'placeholder_token' // TODO: Implement GitHub OAuth
-            },
-        });
-
-        if (error) throw error;
-        toast.success(data.message);
-        fetchAllData(); // Refresh all page data to show the new version
-    } catch (e: any) {
-        toast.error(`Sync failed: ${e.message}`);
+      const { data: sessionData } = await apiClient.auth.getSession();
+      if (!sessionData?.session) throw new Error("You must be logged in.");
+  
+      const { error } = await apiClient.functions.invoke('sync-automation-from-n8n', {
+        headers: { 'Authorization': `Bearer ${sessionData.session.access_token}` },
+        body: {
+          automation_id: automationId,
+        },
+      });
+  
+      if (error) throw error;
+      toast.success('Sync successful! Refreshing data...');
+      fetchAllData();
+  
+    } catch (error: any) {
+      toast.error(`Sync failed: ${error.message}`);
     } finally {
-        setIsSyncing(false);
+      setIsSyncing(false);
     }
-};
+  };
 
+  if (loading) {
+    return (
+      <div className="container mx-auto p-4 sm:p-6 md:p-8">
+        <header className="mb-8">
+          <Button asChild variant="ghost" className="mb-2 -ml-4">
+            <Link to="/">&larr; Back to Dashboard</Link>
+          </Button>
+          <h1 className="text-3xl font-bold tracking-tight">Edit Automation</h1>
+        </header>
+        <div className="flex flex-col items-center justify-center h-64 space-y-4">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold">Loading...</h2>
+            <p className="text-muted-foreground mt-2">Please wait while we load the automation data.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  if (loading) return <div className="flex h-screen items-center justify-center">Loading Automation...</div>;
+  if (error) {
+    return (
+      <div className="container mx-auto p-4 sm:p-6 md:p-8">
+        <header className="mb-8">
+          <Button asChild variant="ghost" className="mb-2 -ml-4">
+            <Link to="/">&larr; Back to Dashboard</Link>
+          </Button>
+          <h1 className="text-3xl font-bold tracking-tight">Edit Automation</h1>
+        </header>
+        <div className="flex flex-col items-center justify-center h-64 space-y-4">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold text-destructive">Error</h2>
+            <p className="text-muted-foreground mt-2">{error}</p>
+          </div>
+          <Button onClick={fetchAllData} variant="outline">
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
+  console.log('Rendering main content');
   return (
     <div className="container mx-auto p-4 sm:p-6 md:p-8">
       <header className="mb-8">
@@ -220,26 +318,30 @@ export default function EditAutomationPage() {
           <Card>
             <CardHeader>
               <CardTitle>Version History</CardTitle>
-              <CardDescription>Past versions of this automation.</CardDescription>
+              <CardDescription>Stored versions of this automation.</CardDescription>
             </CardHeader>
             <CardContent>
               <ul className="space-y-4">
-                {history.map(commit => (
-                  <li key={commit.sha} className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium leading-none">{commit.message}</p>
-                      <p className="text-sm text-muted-foreground">{commit.author} on {new Date(commit.date).toLocaleDateString()}</p>
-                    </div>
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => handleRollback(commit.sha)}
-                        disabled={rollingBackSha === commit.sha}
-                    >
-                        {rollingBackSha === commit.sha ? 'Rolling back...' : 'Rollback'}
-                    </Button>
-                  </li>
-                ))}
+                {Array.isArray(versions) && versions.length > 0 ? (
+                  versions.map(version => (
+                    <li key={version.version} className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium leading-none">Version {version.version}</p>
+                        <p className="text-sm text-muted-foreground">{new Date(version.updated_at).toLocaleDateString()}</p>
+                      </div>
+                      <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleRollback(version.version)}
+                          disabled={rollingBackSha === version.version}
+                      >
+                          {rollingBackSha === version.version ? 'Rolling back...' : 'Rollback'}
+                      </Button>
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-sm text-muted-foreground">No version history available</li>
+                )}
               </ul>
             </CardContent>
           </Card>

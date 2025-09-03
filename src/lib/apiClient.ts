@@ -3,6 +3,8 @@
  * This provides a similar interface to Supabase for seamless migration
  */
 
+import { config } from '../config';
+
 interface ApiResponse<T = any> {
   data: T | null;
   error: { message: string } | null;
@@ -42,8 +44,8 @@ class ApiClient {
   private baseUrl: string;
   private accessToken: string | null = null;
 
-  constructor(baseUrl: string = 'http://localhost:8000/api') {
-    this.baseUrl = baseUrl;
+  constructor(baseUrl?: string) {
+    this.baseUrl = baseUrl || config.API_BASE_URL;
     this.loadTokenFromStorage();
   }
 
@@ -195,8 +197,8 @@ class ApiClient {
     signInWithOAuth: async ({ provider, options }: { provider: string; options?: any }) => {
       // For GitHub OAuth, redirect to Django OAuth endpoint
       if (provider === 'github') {
-        const redirectUrl = options?.redirectTo || `${window.location.origin}/auth/callback/github`;
-        window.location.href = `${this.baseUrl}/auth/github/?redirect_uri=${encodeURIComponent(redirectUrl)}`;
+        const redirectUrl = options?.redirectTo || config.GITHUB_OAUTH_CALLBACK_URL;
+        window.location.href = `${config.GITHUB_OAUTH_URL}/?redirect_uri=${encodeURIComponent(redirectUrl)}`;
       }
       return { data: null, error: null };
     }

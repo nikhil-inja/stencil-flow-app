@@ -258,7 +258,7 @@ export default function SpaceDetailPage() {
       const session = sessionData.session;
       const { data, error } = await apiClient.functions.invoke('deploy-automation', {
         headers: { 'Authorization': `Bearer ${session.access_token}` },
-        body: { automation_id: automationId, space_id: spaceId, github_token: 'placeholder_token' }, // TODO: Implement GitHub OAuth
+        body: { automation_id: automationId, space_id: spaceId },
       });
       if (error) throw error;
       toast.success(data.message);
@@ -280,7 +280,7 @@ export default function SpaceDetailPage() {
       const session = sessionData.session;
       const { data, error } = await apiClient.functions.invoke('update-deployed-workflow', {
         headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { deployment_id: deploymentId, github_token: 'placeholder_token' }, // TODO: Implement GitHub OAuth
+        body: { deployment_id: deploymentId },
       });
       if (error) throw error;
       toast.success(data.message);

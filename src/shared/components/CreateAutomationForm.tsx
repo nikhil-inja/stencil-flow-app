@@ -44,7 +44,6 @@ export default function CreateAutomationForm({ onAutomationCreated }: CreateAuto
         body: JSON.stringify({
           name,
           description,
-          github_token: 'placeholder_token', // TODO: Implement GitHub OAuth
           workflow_json: workflowJson,
         }),
       });

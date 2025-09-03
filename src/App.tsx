@@ -14,7 +14,8 @@ import SpaceDetailPage from './app/agency/pages/SpaceDetailPage';
 import EditAutomationPage from './app/agency/pages/EditAutomationPage';
 import TeamSettingsPage from './app/agency/pages/SettingsPage';
 import ImportPage from './app/agency/pages/ImportPage';
-import AcceptInvitePage from './app/agency/pages/AcceptInvitePage';
+// Temporarily commented out - multi-account workspaces not needed for now
+// import AcceptInvitePage from './app/agency/pages/AcceptInvitePage';
 import GitHubCallbackPage from './app/agency/pages/GitHubCallbackPage';
 
 export default function App() {
@@ -24,19 +25,22 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<AuthPage />} />
-          <Route path="/accept-invite" element={<AcceptInvitePage />} />
+          <Route path="/auth/callback" element={<GitHubCallbackPage />} />
+          {/* Temporarily commented out - multi-account workspaces not needed for now */}
+          {/* <Route path="/accept-invite" element={<AcceptInvitePage />} /> */}
 
           {/* Protected Routes now render inside the SharedLayout */}
           <Route element={<ProtectedRoute />}>
             <Route element={<SharedLayout />}>
               <Route path="/" element={<DashboardPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/automations" element={<AutomationsPage />} />
               <Route path="/spaces" element={<SpacesPage />} />
               <Route path="/space/:spaceId" element={<SpaceDetailPage />} />
               <Route path="/automation/:automationId/edit" element={<EditAutomationPage />} />
+              <Route path="/settings" element={<TeamSettingsPage />} />
               <Route path="/settings/team" element={<TeamSettingsPage />} />
               <Route path="/import/n8n" element={<ImportPage />} />
-              <Route path="/github-callback" element={<GitHubCallbackPage />} />
             </Route>
           </Route>
         </Routes>

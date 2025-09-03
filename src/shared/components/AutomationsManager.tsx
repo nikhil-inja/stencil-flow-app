@@ -117,7 +117,6 @@ export default function AutomationsManager() {
         body: JSON.stringify({
           name,
           description,
-          github_token: 'placeholder_token', // TODO: Implement GitHub OAuth in Django
           workflow_json: workflowJson,
         }),
       });

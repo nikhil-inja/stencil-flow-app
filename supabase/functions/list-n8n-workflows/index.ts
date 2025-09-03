@@ -58,17 +58,29 @@ serve(async (req) => {
     const cleanedUrl = masterInstance.instance_url.replace(/\/$/, "");
     const targetUrl = `${cleanedUrl}/api/v1/workflows`;
     
-    const response = await fetch(targetUrl, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'X-N8N-API-KEY': masterInstance.api_key,
-      },
-    });
+    let response;
+    try {
+      response = await fetch(targetUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'X-N8N-API-KEY': masterInstance.api_key,
+        },
+      });
+    } catch (fetchError) {
+      // Network or connection error
+      throw new Error("Failed to connect to N8N instance. Please check your N8N URL and network connection.");
+    }
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`n8n API Error (Status ${response.status}): ${errorText}`);
+      // Handle specific HTTP status codes with user-friendly messages
+      if (response.status === 401) {
+        throw new Error("Invalid N8N API key. Please check your N8N credentials in Settings.");
+      } else if (response.status >= 500) {
+        throw new Error("N8N server is currently unavailable. Please try again later.");
+      } else {
+        throw new Error("Failed to connect to N8N instance. Please check your N8N configuration.");
+      }
     }
 
     const workflows = await response.json();

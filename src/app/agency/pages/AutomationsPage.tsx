@@ -3,10 +3,10 @@
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { useEffect, useState } from "react";
-import { apiClient } from "@/lib/apiClient";
 import toast from "react-hot-toast";
 import AutomationList from "@/shared/components/AutomationList";
 import CreateAutomationForm from "@/shared/components/CreateAutomationForm";
+import { checkGitHubConnection, createGitHubConnectionHandler } from "@/utils/githubAuth";
 // import { PlusCircle } from "lucide-react";
 
 export default function AutomationsPage() {
@@ -17,20 +17,11 @@ export default function AutomationsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    const checkGitHubConnection = async () => {
+    const loadGitHubStatus = async () => {
       setLoading(true);
       try {
-        const response = await fetch('http://localhost:8000/api/functions/check-github-connection/', {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (!response.ok) throw new Error('Failed to check GitHub connection');
-        const data = await response.json();
-        setIsGitHubConnected(data.is_connected);
+        const status = await checkGitHubConnection();
+        setIsGitHubConnected(status.is_connected);
       } catch (e: any) {
         console.error("Failed to check GitHub connection:", e);
         setIsGitHubConnected(false);
@@ -38,19 +29,14 @@ export default function AutomationsPage() {
         setLoading(false);
       }
     };
-    checkGitHubConnection();
+    loadGitHubStatus();
   }, []);
 
-  const handleConnectGitHub = async () => {
-    const { error } = await apiClient.auth.signInWithOAuth({
-      provider: 'github',
-      options: { 
-        scopes: 'repo',
-        queryParams: { prompt: 'consent' } 
-      },
-    });
-    if (error) toast.error(error);
-  };
+  // Create GitHub connection handlers using our utility
+  const { handleConnect } = createGitHubConnectionHandler(
+    isGitHubConnected,
+    (connected) => setIsGitHubConnected(connected)
+  );
 
   return (
     <div>
@@ -71,7 +57,7 @@ export default function AutomationsPage() {
         </CardHeader>
         <CardContent>
             {loading ? <p>Checking status...</p> : (
-            <Button onClick={handleConnectGitHub}>
+            <Button onClick={handleConnect}>
                 {isGitHubConnected ? 'Refresh GitHub Connection' : 'Connect with GitHub'}
             </Button>
             )}

@@ -9,24 +9,26 @@ import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
-import { Separator } from "@/shared/components/ui/separator";
 import { apiClient } from '@/lib/apiClient';
 import { useSession } from '@/context/SessionContext';
+import { config } from '@/config';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/shared/components/ui/alert-dialog';
+import { checkGitHubConnection, createGitHubConnectionHandler } from '@/utils/githubAuth';
 
-interface TeamMember {
-    id: string;
-    full_name: string | null;
-    email: string | undefined;
-    role: string;
-  }
+// Temporarily commented out - multi-account workspaces not needed for now
+// interface TeamMember {
+//     id: string;
+//     full_name: string | null;
+//     email: string | undefined;
+//     role: string;
+//   }
 
 export default function TeamSettingsPage() {
     const { profile } = useSession();
   
-    // State for inviting new members
-    const [inviteEmail, setInviteEmail] = useState('');
-    const [isInviting, setIsInviting] = useState(false);
+    // Temporarily commented out - multi-account workspaces not needed for now
+    // const [inviteEmail, setInviteEmail] = useState('');
+    // const [isInviting, setIsInviting] = useState(false);
   
     // State for the master n8n credentials
     const [masterUrl, setMasterUrl] = useState('');
@@ -36,8 +38,8 @@ export default function TeamSettingsPage() {
     const [isGitHubConnected, setIsGitHubConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(true);
     
-    // NEW: Real state for the team members list
-    const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+    // Temporarily commented out - multi-account workspaces not needed for now
+    // const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   
     useEffect(() => {
       if (!profile) return;
@@ -57,24 +59,17 @@ export default function TeamSettingsPage() {
           setMasterUrl(workspaceData.n8n_instances[0].instance_url || '');
         }
 
+        // Temporarily commented out - multi-account workspaces not needed for now
         // TODO: Implement team members API endpoint
         // For now, skip team members loading
-        setTeamMembers([]);
+        // setTeamMembers([]);
 
         try {
-            const response = await fetch('http://localhost:8000/api/functions/check-github-connection/', {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-                'Content-Type': 'application/json',
-              },
-            });
-            
-            if (!response.ok) throw new Error('Failed to check GitHub connection');
-            const data = await response.json();
-            setIsGitHubConnected(data.is_connected);
+            const status = await checkGitHubConnection();
+            setIsGitHubConnected(status.is_connected);
           } catch (e: any) {
-            toast.error("Failed to check GitHub connection: " + e.message);
+            console.error("Failed to check GitHub connection:", e);
+            setIsGitHubConnected(false);
           } finally {
             setIsConnecting(false);
           }
@@ -83,42 +78,42 @@ export default function TeamSettingsPage() {
       loadPageData();
     }, [profile]);
 
-  // Logic for inviting a user
-  const handleInviteUser = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!inviteEmail) return;
-    setIsInviting(true);
+  // Temporarily commented out - multi-account workspaces not needed for now
+  // const handleInviteUser = async (event: FormEvent) => {
+  //   event.preventDefault();
+  //   if (!inviteEmail) return;
+  //   setIsInviting(true);
 
-    try {
-      const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
-      if (sessionError || !sessionData?.session) throw new Error("You must be logged in to invite users.");
-      const session = sessionData.session;
+  //   try {
+  //     const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+  //     if (sessionError || !sessionData?.session) throw new Error("You must be logged in to invite users.");
+  //     const session = sessionData.session;
 
-      const { data, error } = await apiClient.functions.invoke('invite-user', {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-        body: { email_to_invite: inviteEmail },
-      });
+  //     const { data, error } = await apiClient.functions.invoke('invite-user', {
+  //       headers: { 'Authorization': `Bearer ${session.access_token}` },
+  //       body: { email_to_invite: inviteEmail },
+  //     });
 
-      if (error) throw error;
+  //     if (error) throw error;
 
-      toast.success(
-        (t) => (
-          <div className="flex flex-col gap-2">
-            <span>Invite link generated!</span>
-            <p className="text-xs">Copy this link and send it to your teammate.</p>
-            <Input readOnly defaultValue={data.invitation_link} />
-            <Button size="sm" onClick={() => toast.dismiss(t.id)}>Dismiss</Button>
-          </div>
-        ), { duration: 15000 }
-      );
-      setInviteEmail('');
+  //     toast.success(
+  //       (t) => (
+  //         <div className="flex flex-col gap-2">
+  //           <span>Invite link generated!</span>
+  //           <p className="text-xs">Copy this link and send it to your teammate.</p>
+  //           <Input readOnly defaultValue={data.invitation_link} />
+  //           <Button size="sm" onClick={() => toast.dismiss(t.id)}>Dismiss</Button>
+  //         </div>
+  //       ), { duration: 15000 }
+  //     );
+  //     setInviteEmail('');
 
-    } catch (error: any) {
-      toast.error(`Failed to send invite: ${error.message}`);
-    } finally {
-      setIsInviting(false);
-    }
-  };
+  //   } catch (error: any) {
+  //     toast.error(`Failed to send invite: ${error.message}`);
+  //   } finally {
+  //     setIsInviting(false);
+  //   }
+  // };
 
   // Logic for saving master credentials
   const handleSaveMasterCreds = async (event: FormEvent) => {
@@ -130,7 +125,7 @@ export default function TeamSettingsPage() {
       const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
       if (sessionError || !sessionData?.session) throw new Error("You must be logged in.");
       
-      const response = await fetch('http://localhost:8000/api/n8n/upsert-master-instance/', {
+      const response = await fetch(`${config.API_BASE_URL}/n8n/upsert-master-instance/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -155,30 +150,11 @@ export default function TeamSettingsPage() {
     }
   };
 
-  const handleConnectGitHub = async () => {
-    const { error } = await apiClient.auth.signInWithOAuth({
-      provider: 'github',
-      options: {
-        scopes: 'repo',
-        redirectTo: `${window.location.origin}/github-callback`,
-      },
-    });
-    if (error) toast.error(error);
-  };
-
-  const handleDisconnectGitHub = async () => {
-    setIsConnecting(true);
-    try {
-        const { error } = await apiClient.functions.invoke('disconnect-github');
-        if (error) throw error;
-        toast.success("GitHub account disconnected.");
-        setIsGitHubConnected(false);
-    } catch(e: any) {
-        toast.error("Failed to disconnect GitHub: " + e.message);
-    } finally {
-        setIsConnecting(false);
-    }
-  };
+  // Create GitHub connection handlers using our utility
+  const { handleConnect, handleDisconnect } = createGitHubConnectionHandler(
+    isGitHubConnected,
+    (connected) => setIsGitHubConnected(connected)
+  );
 
   return (
     <div className="container mx-auto p-4 sm:p-6 md:p-8">
@@ -213,13 +189,13 @@ export default function TeamSettingsPage() {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={handleDisconnectGitHub}>Yes, Disconnect</AlertDialogAction>
+                                <AlertDialogAction onClick={handleDisconnect}>Yes, Disconnect</AlertDialogAction>
                             </AlertDialogFooter>
                         </AlertDialogContent>
                     </AlertDialog>
                 </div>
               ) : (
-                <Button onClick={handleConnectGitHub}>Connect with GitHub</Button>
+                <Button onClick={handleConnect}>Connect with GitHub</Button>
               )
             )}
           </CardContent>
@@ -263,10 +239,11 @@ export default function TeamSettingsPage() {
           </CardContent>
         </Card>
 
-        <Separator />
+        {/* Temporarily commented out - multi-account workspaces not needed for now */}
+        {/* <Separator />
 
         {/* Card for Inviting New Members */}
-        <Card>
+        {/* <Card>
           <CardHeader>
             <CardTitle>Invite New Member</CardTitle>
             <CardDescription>Invite a new member to your workspace.</CardDescription>
@@ -290,10 +267,10 @@ export default function TeamSettingsPage() {
               </Button>
             </form>
           </CardContent>
-        </Card>
+        </Card> */}
 
         {/* Card for Listing Team Members */}
-        <Card>
+        {/* <Card>
           <CardHeader>
             <CardTitle>Team Members</CardTitle>
             <CardDescription>Manage members of your workspace.</CardDescription>
@@ -313,7 +290,7 @@ export default function TeamSettingsPage() {
               </ul>
             </div>
           </CardContent>
-        </Card>
+        </Card> */}
       </main>
     </div>
   );
