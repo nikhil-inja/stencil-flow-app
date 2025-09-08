@@ -10,6 +10,9 @@ from . import views
 router = DefaultRouter()
 
 urlpatterns = [
+    # Health Check
+    path('health/', views.health_check, name='health_check'),
+    
     # Authentication
     path('auth/signin/', views.AuthViewSet.as_view(), name='auth_signin'),
     path('auth/session/', views.SessionView.as_view(), name='auth_session'),

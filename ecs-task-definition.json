@@ -1,0 +1,105 @@
+{
+  "family": "stencil-flow-django",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::100025281072:role/stencil-flow-ecs-task-execution-role",
+  "taskRoleArn": "arn:aws:iam::100025281072:role/stencil-flow-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "django",
+      "image": "100025281072.dkr.ecr.us-east-1.amazonaws.com/stencil-flow-django:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "DEBUG",
+          "value": "False"
+        },
+        {
+          "name": "ALLOWED_HOSTS",
+          "value": "localhost,127.0.0.1,*.elb.amazonaws.com,*.cloudfront.net,10.0.*.*"
+        },
+        {
+          "name": "DB_NAME",
+          "value": "stencil_flow_prod"
+        },
+        {
+          "name": "DB_USER",
+          "value": "postgres"
+        },
+        {
+          "name": "DB_PORT",
+          "value": "5432"
+        },
+        {
+          "name": "DB_HOST",
+          "value": "stencil-flow-db.cyd40m06a1rt.us-east-1.rds.amazonaws.com"
+        },
+        {
+          "name": "CORS_ALLOWED_ORIGINS",
+          "value": "https://d32xdxdeulm2qf.cloudfront.net,http://stencil-flow-alb-1882963104.us-east-1.elb.amazonaws.com"
+        },
+        {
+          "name": "CORS_ALLOW_ALL_ORIGINS",
+          "value": "False"
+        },
+        {
+          "name": "SITE_URL",
+          "value": "https://d32xdxdeulm2qf.cloudfront.net"
+        },
+        {
+          "name": "SERVER_URL",
+          "value": "https://d32xdxdeulm2qf.cloudfront.net"
+        },
+        {
+            "name": "GITHUB_CALLBACK_URL",
+            "value": "https://d32xdxdeulm2qf.cloudfront.net/api/auth/github/callback/"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:100025281072:secret:stencil-flow/django-secret-OEDjuw"
+        },
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:100025281072:secret:stencil-flow/db-password-SGUaKy"
+        },
+        {
+          "name": "JWT_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:100025281072:secret:stencil-flow/jwt-secret-rZ5OF7"
+        },
+        {
+          "name": "GITHUB_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:100025281072:secret:stencil-flow/github-client-id-ZplYop"
+        },
+        {
+          "name": "GITHUB_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:100025281072:secret:stencil-flow/github-client-secret-A3RCIW"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/stencil-flow-django",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/api/health/ || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}
+

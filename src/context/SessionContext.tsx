@@ -24,8 +24,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let isMounted = true;
-    let retryCount = 0;
-    const maxRetries = 3;
 
     const fetchSession = async () => {
       if (!isMounted) return;
@@ -42,14 +40,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           console.log('❌ No session found');
           setUser(null);
           setProfile(null);
-          
-          // Retry logic for transient network issues
-          if (retryCount < maxRetries && error) {
-            retryCount++;
-            console.log(`🔁 Retrying session fetch (${retryCount}/${maxRetries})`);
-            setTimeout(() => fetchSession(), 1000 * retryCount);
-            return;
-          }
         } else {
           console.log('✅ Session found:', data.session);
           setUser(data.session.user);
@@ -74,7 +64,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
               updated_at: new Date().toISOString()
             });
           }
-          retryCount = 0; // Reset retry count on success
         }
       } catch (error) {
         console.error('💥 Error fetching session:', error);
@@ -82,14 +71,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         
         setUser(null);
         setProfile(null);
-        
-        // Retry logic for network errors
-        if (retryCount < maxRetries) {
-          retryCount++;
-          console.log(`🔁 Retrying after error (${retryCount}/${maxRetries})`);
-          setTimeout(() => fetchSession(), 1000 * retryCount);
-          return;
-        }
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -98,9 +79,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
 
     fetchSession();
-
-    // Simplified auth state change listener (removed to prevent loops)
-    // The JWT-based approach doesn't need real-time state changes like Supabase
     
     return () => {
       isMounted = false;

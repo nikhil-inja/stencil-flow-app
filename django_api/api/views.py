@@ -29,6 +29,7 @@ from .utils import (
     create_workflow_version, get_workflow_version, list_workflow_versions, rollback_workflow_to_version,
     delete_workflow_folder, GitHubAPIError
 )
+from django.utils import timezone
 
 
 
@@ -2035,3 +2036,13 @@ def get_dashboard_stats(request):
             {'error': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    """Health check endpoint for Docker health checks"""
+    return Response({
+        'status': 'healthy',
+        'timestamp': timezone.now().isoformat(),
+        'service': 'stencil_flow_django'
+    })

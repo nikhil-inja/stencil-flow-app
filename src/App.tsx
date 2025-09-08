@@ -6,6 +6,7 @@ import { Toaster } from 'react-hot-toast';
 // Import Layout and Page Components
 import SharedLayout from './shared/components/SharedLayout';
 import ProtectedRoute from './shared/components/ProtectedRoute';
+import ErrorBoundary from './shared/components/ErrorBoundary';
 import AuthPage from './app/agency/pages/AuthPage';
 import DashboardPage from './app/agency/pages/DashboardPage';
 import AutomationsPage from './app/agency/pages/AutomationsPage';
@@ -32,8 +33,16 @@ export default function App() {
           {/* Protected Routes now render inside the SharedLayout */}
           <Route element={<ProtectedRoute />}>
             <Route element={<SharedLayout />}>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/" element={
+                <ErrorBoundary>
+                  <DashboardPage />
+                </ErrorBoundary>
+              } />
+              <Route path="/dashboard" element={
+                <ErrorBoundary>
+                  <DashboardPage />
+                </ErrorBoundary>
+              } />
               <Route path="/automations" element={<AutomationsPage />} />
               <Route path="/spaces" element={<SpacesPage />} />
               <Route path="/space/:spaceId" element={<SpaceDetailPage />} />
