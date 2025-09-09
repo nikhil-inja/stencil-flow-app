@@ -37,6 +37,10 @@ RUN python manage.py collectstatic --noinput --settings=stencil_flow_api.setting
 # Create non-root user
 RUN adduser --disabled-password --gecos '' django_user \
     && chown -R django_user:django_user /app
+
+# Make start script executable
+RUN chmod +x start.sh
+
 USER django_user
 
 # Expose port
@@ -47,4 +51,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/api/health/ || exit 1
 
 # Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120", "stencil_flow_api.wsgi:application"]
+CMD ["./start.sh"]

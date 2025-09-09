@@ -106,6 +106,7 @@ def github_oauth_redirect(request):
         return redirect(oauth_url)
         
     except Exception as e:
+        print(f"GitHub OAuth redirect error: {str(e)}")
         return Response(
             {'error': f'Failed to initiate GitHub OAuth: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -143,7 +144,12 @@ def github_oauth_callback(request):
         token_response = requests.post(token_url, data=token_data, headers={'Accept': 'application/json'})
         token_json = token_response.json()
         
+        # Debug logging
+        print(f"Token response status: {token_response.status_code}")
+        print(f"Token response: {token_json}")
+        
         if 'access_token' not in token_json:
+            print(f"Token exchange failed: {token_json}")
             return redirect(f"{settings.SITE_URL}/auth/callback?error=token_exchange_failed")
         
         github_token = token_json['access_token']
@@ -280,6 +286,9 @@ def github_oauth_callback(request):
         return redirect(callback_url)
         
     except Exception as e:
+        print(f"GitHub OAuth callback error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return redirect(f"{settings.SITE_URL}/auth/callback?error=server_error")
 
 
@@ -2070,40 +2079,102 @@ def get_execution_analytics(request):
         profile = get_object_or_404(Profile, user=request.user)
         workspace = profile.workspace
         
-        # Get master n8n instance for the workspace
-        master_instance = N8nInstance.objects.filter(
-            workspace=workspace,
-            space__isnull=True
-        ).first()
-        
-        if not master_instance:
+        # Find the deployment for this workflow_id to get the space
+        try:
+            deployment = Deployment.objects.select_related('space').get(
+                n8n_workflow_id=workflow_id,
+                automation__workspace=workspace
+            )
+            space = deployment.space
+        except Deployment.DoesNotExist:
             return Response({
-                'error': 'No master n8n instance configured for this workspace'
-            }, status=status.HTTP_400_BAD_REQUEST)
+                'error': f'No deployment found for workflow {workflow_id}'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get n8n instance for this space (space-specific or fallback to master)
+        instance = None
+        try:
+            # Try space-specific instance first
+            instance = N8nInstance.objects.get(space=space)
+        except N8nInstance.DoesNotExist:
+            # Fall back to workspace master instance
+            try:
+                instance = N8nInstance.objects.get(workspace=workspace, space__isnull=True)
+            except N8nInstance.DoesNotExist:
+                return Response({
+                    'error': 'No n8n instance configured for this space or workspace'
+                }, status=status.HTTP_400_BAD_REQUEST)
         
         # Calculate date range (past 7 days)
         end_date = timezone.now().date()
         start_date = end_date - timedelta(days=6)  # 7 days total including today
         
         # Fetch executions from n8n API
-        n8n_url = master_instance.instance_url.rstrip('/')
+        n8n_url = instance.instance_url.rstrip('/')
         
         # Build query parameters for the executions API
+        # Try different parameter name variations as n8n API might expect different formats
         params = {
             'workflowId': workflow_id,
             'limit': 1000,  # Maximum limit to get all executions
             'includeData': 'false'  # We don't need execution data, just metadata
         }
         
+        # Alternative parameter names that might work
+        # Some n8n versions might expect 'workflow_id' instead of 'workflowId'
+        # or might not support 'includeData' parameter
+        
         executions_url = f"{n8n_url}/api/v1/executions"
         
+        # Add debugging information
+        print(f"DEBUG: Making n8n API call to {executions_url}")
+        print(f"DEBUG: Parameters: {params}")
+        print(f"DEBUG: Headers: {{'X-N8N-API-KEY': '***'}}")
+        print(f"DEBUG: Workflow ID: {workflow_id}")
+        print(f"DEBUG: Instance URL: {instance.instance_url}")
+        
         try:
+            # First attempt with standard parameters
             n8n_response = requests.get(
                 executions_url,
-                headers={'X-N8N-API-KEY': master_instance.api_key},
+                headers={'X-N8N-API-KEY': instance.api_key},
                 params=params,
                 timeout=30
             )
+            
+            # If we get a 400 error, try with alternative parameter combinations
+            if n8n_response.status_code == 400:
+                print("DEBUG: First attempt failed with 400, trying alternative parameters")
+                
+                # Try without includeData parameter (most likely culprit)
+                alternative_params = {
+                    'workflowId': workflow_id,  # Keep camelCase workflowId
+                    'limit': 1000
+                    # Remove includeData as it might not be supported
+                }
+                
+                n8n_response = requests.get(
+                    executions_url,
+                    headers={'X-N8N-API-KEY': instance.api_key},
+                    params=alternative_params,
+                    timeout=30
+                )
+                print(f"DEBUG: Alternative attempt (no includeData) status: {n8n_response.status_code}")
+                
+                # If still 400, try with just workflowId
+                if n8n_response.status_code == 400:
+                    print("DEBUG: Still 400, trying with minimal parameters")
+                    minimal_params = {
+                        'workflowId': workflow_id
+                    }
+                    
+                    n8n_response = requests.get(
+                        executions_url,
+                        headers={'X-N8N-API-KEY': instance.api_key},
+                        params=minimal_params,
+                        timeout=30
+                    )
+                    print(f"DEBUG: Minimal attempt status: {n8n_response.status_code}")
             
             if n8n_response.status_code == 401:
                 return Response({
@@ -2115,9 +2186,38 @@ def get_execution_analytics(request):
                     'error': f'Workflow {workflow_id} not found'
                 }, status=status.HTTP_404_NOT_FOUND)
             
-            if not n8n_response.ok:
+            if n8n_response.status_code == 400:
+                # Get detailed error message from n8n response
+                try:
+                    error_data = n8n_response.json()
+                    error_message = error_data.get('message', 'Bad request')
+                except:
+                    error_message = n8n_response.text or 'Bad request'
+                
                 return Response({
-                    'error': f'n8n API error: {n8n_response.status_code}'
+                    'error': f'n8n API bad request: {error_message}',
+                    'details': {
+                        'url': executions_url,
+                        'params': params,
+                        'workflowid': workflow_id
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not n8n_response.ok:
+                # Get detailed error message for other status codes
+                try:
+                    error_data = n8n_response.json()
+                    error_message = error_data.get('message', f'HTTP {n8n_response.status_code}')
+                except:
+                    error_message = n8n_response.text or f'HTTP {n8n_response.status_code}'
+                
+                return Response({
+                    'error': f'n8n API error: {error_message}',
+                    'details': {
+                        'status_code': n8n_response.status_code,
+                        'url': executions_url,
+                        'params': params
+                    }
                 }, status=status.HTTP_502_BAD_GATEWAY)
             
             executions_data = n8n_response.json()

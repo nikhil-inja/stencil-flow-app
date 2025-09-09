@@ -57,20 +57,27 @@ def get_github_token_for_user(user):
 
 
 def generate_oauth_state():
-    """Generate and store OAuth state for CSRF protection"""
-    state = secrets.token_urlsafe(32)
-    # Store in cache for 10 minutes
-    cache.set(f"oauth_state_{state}", True, 600)
-    return state
+    """Generate signed OAuth state (no server storage needed)"""
+    import jwt
+    import time
+    payload = {
+        'state': secrets.token_urlsafe(32),
+        'exp': int(time.time()) + 600,  # 10 minutes
+        'iat': int(time.time())
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
 
 def validate_oauth_state(state):
-    """Validate OAuth state and remove it"""
-    key = f"oauth_state_{state}"
-    if cache.get(key):
-        cache.delete(key)
+    """Validate signed OAuth state"""
+    import jwt
+    try:
+        payload = jwt.decode(state, settings.SECRET_KEY, algorithms=['HS256'])
         return True
-    return False
+    except jwt.ExpiredSignatureError:
+        return False
+    except jwt.InvalidTokenError:
+        return False
 
 
 class GitHubAPIError(Exception):

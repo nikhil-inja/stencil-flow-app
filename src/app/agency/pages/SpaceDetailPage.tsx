@@ -16,6 +16,8 @@ import { Switch } from '@/shared/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/components/ui/tooltip';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/shared/components/ui/alert-dialog';
 import { Badge } from '@/shared/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select';
+import WorkflowAnalyticsDashboard from '@/shared/components/WorkflowAnalyticsDashboard';
 
 // Define data shapes
 interface Space { 
@@ -48,6 +50,7 @@ export default function SpaceDetailPage() {
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [workflowStatuses, setWorkflowStatuses] = useState<Map<string, boolean>>(new Map());
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>('');
   
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -173,6 +176,13 @@ export default function SpaceDetailPage() {
   useEffect(() => {
     fetchAllData();
   }, [profile, spaceId]);
+
+  // Set first workflow as selected when deployments load
+  useEffect(() => {
+    if (deployments.length > 0 && !selectedWorkflowId) {
+      setSelectedWorkflowId(deployments[0].n8n_workflow_id);
+    }
+  }, [deployments, selectedWorkflowId]);
 
   const handleSaveInstance = async (event: FormEvent) => {
     event.preventDefault();
@@ -493,6 +503,61 @@ export default function SpaceDetailPage() {
           </CardContent>
         </Card>
       </main>
+      {instance && deployments.length > 0 && (
+        <div className="mt-8 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Workflow Analytics</CardTitle>
+              <CardDescription>Execution analytics, AI token usage, and flow diagrams for deployed workflows.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Workflow Selection Dropdown */}
+              <div className="space-y-2">
+                <Label htmlFor="workflow-select">Select Workflow</Label>
+                <Select value={selectedWorkflowId} onValueChange={setSelectedWorkflowId}>
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue placeholder="Choose a workflow to view analytics" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white">
+                    {deployments.map(dep => {
+                      const automationInfo = automations.find(a => a.id === dep.automation_id);
+                      const isActive = workflowStatuses.get(dep.n8n_workflow_id) ?? false;
+                      return (
+                        <SelectItem key={dep.id} value={dep.n8n_workflow_id}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{automationInfo?.name || 'Unknown Automation'}</span>
+                            <Badge variant={isActive ? "default" : "secondary"} className="ml-2">
+                              {isActive ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Selected Workflow Analytics */}
+              {selectedWorkflowId && (() => {
+                const selectedDeployment = deployments.find(dep => dep.n8n_workflow_id === selectedWorkflowId);
+                if (!selectedDeployment) return null;
+                
+                const automationInfo = automations.find(a => a.id === selectedDeployment.automation_id);
+                const isActive = workflowStatuses.get(selectedWorkflowId) ?? false;
+                
+                return (
+                  <WorkflowAnalyticsDashboard
+                    key={selectedWorkflowId}
+                    workflowId={selectedWorkflowId}
+                    automationName={automationInfo?.name || 'Unknown Automation'}
+                    isActive={isActive}
+                  />
+                );
+              })()}
+            </CardContent>
+          </Card>
+        </div>
+      )}
       <AlertDialog open={isWarningModalOpen} onOpenChange={setIsWarningModalOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
