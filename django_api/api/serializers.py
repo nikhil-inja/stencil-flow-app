@@ -187,3 +187,29 @@ class GitHubOAuthResponseSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()
     user = UserSerializer()
     profile = ProfileSerializer()
+
+
+class ExecutionAnalyticsRequestSerializer(serializers.Serializer):
+    """Serializer for execution analytics request"""
+    workflow_id = serializers.CharField(help_text="N8N workflow ID to get execution analytics for")
+
+
+class DailyExecutionStatsSerializer(serializers.Serializer):
+    """Serializer for daily execution statistics"""
+    date = serializers.DateField()
+    total_executions = serializers.IntegerField()
+    successful_executions = serializers.IntegerField()
+    failed_executions = serializers.IntegerField()
+    success_percentage = serializers.FloatField()
+
+
+class ExecutionAnalyticsResponseSerializer(serializers.Serializer):
+    """Serializer for execution analytics response"""
+    workflow_id = serializers.CharField()
+    total_executions = serializers.IntegerField()
+    total_successful = serializers.IntegerField()
+    total_failed = serializers.IntegerField()
+    overall_success_percentage = serializers.FloatField()
+    daily_stats = DailyExecutionStatsSerializer(many=True)
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()

@@ -66,7 +66,7 @@ export default function AutomationsManager() {
             return;
           }
 
-          const response = await fetch(`http://localhost:8000/api/automations/${automationId}/`, {
+          const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/automations/${automationId}/`, {
             method: 'DELETE',
             headers: {
               'Authorization': `Bearer ${sessionData.session.access_token}`,
@@ -101,7 +101,7 @@ export default function AutomationsManager() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/functions/create-automation/', {
+      const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/functions/create-automation/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

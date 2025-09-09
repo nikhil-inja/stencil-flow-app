@@ -35,10 +35,12 @@ export default function CreateAutomationForm({ onAutomationCreated }: CreateAuto
         return;
       }
 
-      const { data, error } = await apiClient.functions.createAutomation({
-        name,
-        description,
-        workflow_json: workflowJson,
+      const { data, error } = await apiClient.functions.invoke('create-automation', {
+        body: {
+          name,
+          description,
+          workflow_json: workflowJson,
+        },
       });
 
       if (error) {

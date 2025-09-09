@@ -2,8 +2,8 @@
   "family": "stencil-flow-django",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "512",
-  "memory": "1024",
+  "cpu": "1024",
+  "memory": "2048",
   "executionRoleArn": "arn:aws:iam::100025281072:role/stencil-flow-ecs-task-execution-role",
   "taskRoleArn": "arn:aws:iam::100025281072:role/stencil-flow-ecs-task-role",
   "containerDefinitions": [
@@ -23,7 +23,7 @@
         },
         {
           "name": "ALLOWED_HOSTS",
-          "value": "localhost,127.0.0.1,*.elb.amazonaws.com,*.cloudfront.net,10.0.*.*"
+          "value": "*"
         },
         {
           "name": "DB_NAME",
@@ -93,12 +93,15 @@
         }
       },
       "healthCheck": {
-        "command": ["CMD-SHELL", "curl -f http://localhost:8000/api/health/ || exit 1"],
-        "interval": 30,
-        "timeout": 5,
-        "retries": 3,
-        "startPeriod": 60
-      }
+          "command": [
+            "CMD-SHELL",
+            "curl -f http://localhost:8000/api/health/ || exit 1"
+          ],
+          "interval": 30,
+          "timeout": 5,
+          "retries": 3,
+          "startPeriod": 120
+        }  
     }
   ]
 }

@@ -36,8 +36,8 @@ export default function DashboardPage() {
       setLoading(true);
       try {
         console.log('🔍 Fetching dashboard stats...');
-        // Use the functions.invoke method to call the Django API endpoint
-        const { data, error } = await apiClient.functions.invoke('get-dashboard-stats');
+        // Use the rpc method for GET requests (dashboard stats is a GET endpoint)
+        const { data, error } = await apiClient.rpc('get-dashboard-stats');
 
         if (error) {
           console.error('❌ Dashboard API error:', error);

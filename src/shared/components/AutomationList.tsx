@@ -58,7 +58,7 @@ export default function AutomationList() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/automations/', {
+      const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/automations/`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -91,7 +91,7 @@ export default function AutomationList() {
             return;
           }
 
-          const response = await fetch(`http://localhost:8000/api/automations/${automationId}/`, {
+          const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/automations/${automationId}/`, {
             method: 'DELETE',
             headers: {
               'Authorization': `Bearer ${sessionData.session.access_token}`,

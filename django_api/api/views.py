@@ -2046,3 +2046,183 @@ def health_check(request):
         'timestamp': timezone.now().isoformat(),
         'service': 'stencil_flow_django'
     })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_execution_analytics(request):
+    """
+    Get execution analytics for a specific workflow from n8n
+    Returns success/failure counts and daily time-series data for the past 7 days
+    """
+    from collections import defaultdict
+    from datetime import datetime, timedelta
+    
+    # Validate request data
+    serializer = ExecutionAnalyticsRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    workflow_id = serializer.validated_data['workflow_id']
+    
+    try:
+        # Get user's profile and workspace
+        profile = get_object_or_404(Profile, user=request.user)
+        workspace = profile.workspace
+        
+        # Get master n8n instance for the workspace
+        master_instance = N8nInstance.objects.filter(
+            workspace=workspace,
+            space__isnull=True
+        ).first()
+        
+        if not master_instance:
+            return Response({
+                'error': 'No master n8n instance configured for this workspace'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Calculate date range (past 7 days)
+        end_date = timezone.now().date()
+        start_date = end_date - timedelta(days=6)  # 7 days total including today
+        
+        # Fetch executions from n8n API
+        n8n_url = master_instance.instance_url.rstrip('/')
+        
+        # Build query parameters for the executions API
+        params = {
+            'workflowId': workflow_id,
+            'limit': 1000,  # Maximum limit to get all executions
+            'includeData': 'false'  # We don't need execution data, just metadata
+        }
+        
+        executions_url = f"{n8n_url}/api/v1/executions"
+        
+        try:
+            n8n_response = requests.get(
+                executions_url,
+                headers={'X-N8N-API-KEY': master_instance.api_key},
+                params=params,
+                timeout=30
+            )
+            
+            if n8n_response.status_code == 401:
+                return Response({
+                    'error': 'Invalid n8n API key'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            if n8n_response.status_code == 404:
+                return Response({
+                    'error': f'Workflow {workflow_id} not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            if not n8n_response.ok:
+                return Response({
+                    'error': f'n8n API error: {n8n_response.status_code}'
+                }, status=status.HTTP_502_BAD_GATEWAY)
+            
+            executions_data = n8n_response.json()
+            executions = executions_data.get('data', [])
+            
+        except requests.exceptions.RequestException as e:
+            return Response({
+                'error': f'Failed to connect to n8n instance: {str(e)}'
+            }, status=status.HTTP_502_BAD_GATEWAY)
+        
+        # Process executions data
+        total_executions = 0
+        total_successful = 0
+        total_failed = 0
+        
+        # Daily stats dictionary: date -> {total, successful, failed}
+        daily_stats = defaultdict(lambda: {'total': 0, 'successful': 0, 'failed': 0})
+        
+        for execution in executions:
+            # Parse execution date
+            started_at = execution.get('startedAt')
+            if not started_at:
+                continue
+                
+            try:
+                execution_date = datetime.fromisoformat(started_at.replace('Z', '+00:00')).date()
+            except (ValueError, AttributeError):
+                continue
+            
+            # Only include executions within our date range
+            if execution_date < start_date or execution_date > end_date:
+                continue
+            
+            total_executions += 1
+            daily_stats[execution_date]['total'] += 1
+            
+            # Determine execution status
+            finished = execution.get('finished', False)
+            if finished:
+                # Check if execution was successful
+                # In n8n, a finished execution is successful unless it has an error
+                execution_data = execution.get('data', {})
+                if execution_data and execution_data.get('resultData', {}).get('error'):
+                    # Execution failed
+                    total_failed += 1
+                    daily_stats[execution_date]['failed'] += 1
+                else:
+                    # Execution successful
+                    total_successful += 1
+                    daily_stats[execution_date]['successful'] += 1
+            else:
+                # Unfinished execution - treat as failed for analytics
+                total_failed += 1
+                daily_stats[execution_date]['failed'] += 1
+        
+        # Calculate overall success percentage
+        overall_success_percentage = 0.0
+        if total_executions > 0:
+            overall_success_percentage = (total_successful / total_executions) * 100
+        
+        # Build daily stats array
+        daily_stats_array = []
+        current_date = start_date
+        
+        while current_date <= end_date:
+            stats = daily_stats[current_date]
+            daily_total = stats['total']
+            daily_successful = stats['successful']
+            daily_failed = stats['failed']
+            
+            # Calculate daily success percentage
+            daily_success_percentage = 0.0
+            if daily_total > 0:
+                daily_success_percentage = (daily_successful / daily_total) * 100
+            
+            daily_stats_array.append({
+                'date': current_date,
+                'total_executions': daily_total,
+                'successful_executions': daily_successful,
+                'failed_executions': daily_failed,
+                'success_percentage': round(daily_success_percentage, 2)
+            })
+            
+            current_date += timedelta(days=1)
+        
+        # Prepare response data
+        response_data = {
+            'workflow_id': workflow_id,
+            'total_executions': total_executions,
+            'total_successful': total_successful,
+            'total_failed': total_failed,
+            'overall_success_percentage': round(overall_success_percentage, 2),
+            'daily_stats': daily_stats_array,
+            'period_start': start_date,
+            'period_end': end_date
+        }
+        
+        # Validate response with serializer
+        response_serializer = ExecutionAnalyticsResponseSerializer(data=response_data)
+        if response_serializer.is_valid():
+            return Response(response_serializer.validated_data)
+        else:
+            return Response(response_serializer.errors, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except Exception as e:
+        return Response({
+            'error': f'Internal server error: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

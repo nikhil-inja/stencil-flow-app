@@ -42,6 +42,7 @@ urlpatterns = [
     path('functions/update-deployed-workflow/', views.update_deployed_workflow, name='update_deployed_workflow'),
     path('functions/disconnect-github/', views.disconnect_github, name='disconnect_github'),
     path('functions/get-dashboard-stats/', views.get_dashboard_stats, name='get_dashboard_stats'),
+    path('functions/get-execution-analytics/', views.get_execution_analytics, name='get_execution_analytics'),
     path('n8n/upsert-master-instance/', views.upsert_master_n8n_instance, name='upsert_master_n8n_instance'),
     
     # CRUD Endpoints
