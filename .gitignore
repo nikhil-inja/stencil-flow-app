@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+*.prod
+*.production
 .env
 
 # Editor directories and files
@@ -26,3 +28,5 @@ dist-ssr
 
 
 stencil-flow-app/django_api/.env
+
+terraform/*

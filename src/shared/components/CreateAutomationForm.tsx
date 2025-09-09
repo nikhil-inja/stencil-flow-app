@@ -35,29 +35,23 @@ export default function CreateAutomationForm({ onAutomationCreated }: CreateAuto
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/functions/create-automation/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionData.session.access_token}`,
-        },
-        body: JSON.stringify({
+      const { data, error } = await apiClient.functions.invoke('create-automation', {
+        body: {
           name,
           description,
           workflow_json: workflowJson,
-        }),
+        },
       });
 
-      if (response.ok) {
+      if (error) {
+        throw new Error(error.message || 'Failed to create automation');
+      } else {
         // Reset form and notify parent to refresh the list
         setName('');
         setDescription('');
         setWorkflowJson('');
         toast.success('Automation and GitHub repo created!');
         onAutomationCreated();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create automation');
       }
   
     } catch (error: any) {

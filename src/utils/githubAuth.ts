@@ -38,7 +38,7 @@ export async function checkGitHubConnection(): Promise<GitHubConnectionStatus> {
  * Initiate GitHub OAuth flow by redirecting to Django OAuth endpoint
  */
 export function initiateGitHubOAuth(): void {
-  const oauthUrl = `${config.API_BASE_URL}/auth/github/`;
+  const oauthUrl = `${config.GITHUB_OAUTH_URL}/`;
   window.location.href = oauthUrl;
 }
 

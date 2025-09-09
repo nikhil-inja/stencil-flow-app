@@ -9,11 +9,13 @@ export default function ProtectedRoute() {
 
   useEffect(() => {
     const checkSession = async () => {
-       try {
+      try {
+        console.log('🔐 ProtectedRoute: Checking authentication...');
         const { data } = await apiClient.auth.getSession();
+        console.log('🔐 ProtectedRoute: Session check result:', { hasSession: !!data?.session });
         setIsAuthenticated(data?.session ? true : false);
       } catch (error) {
-        console.error('Error checking session:', error);
+        console.error('🔐 ProtectedRoute: Error checking session:', error);
         setIsAuthenticated(false);
       }
     };

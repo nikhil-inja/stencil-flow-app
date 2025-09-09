@@ -319,6 +319,30 @@ class ApiClient {
         headers,
         body: JSON.stringify(options?.body || {}),
       });
+    },
+
+    // Execution Analytics API
+    getExecutionAnalytics: async (params: { workflow_id: string }): Promise<ApiResponse<any>> => {
+      return await this.request('/functions/get-execution-analytics/', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+    },
+
+    // AI Token Usage API (placeholder for future implementation)
+    getAITokenUsage: async (params: { workflow_id: string }): Promise<ApiResponse<any>> => {
+      return await this.request('/functions/get-ai-token-usage/', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+    },
+
+    // Workflow Flowchart API (placeholder for future implementation)
+    getWorkflowFlowchart: async (params: { workflow_id: string }): Promise<ApiResponse<any>> => {
+      return await this.request('/functions/get-workflow-flowchart/', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
     }
   };
 
@@ -338,3 +362,5 @@ export const apiClient = new ApiClient();
 
 // Export types for use in components
 export type { User, Profile, Session, ApiResponse };
+
+

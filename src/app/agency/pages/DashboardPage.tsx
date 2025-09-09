@@ -36,6 +36,7 @@ export default function DashboardPage() {
       setLoading(true);
       try {
         console.log('🔍 Fetching dashboard stats...');
+        // Use the rpc method for GET requests (dashboard stats is a GET endpoint)
         const { data, error } = await apiClient.rpc('get-dashboard-stats');
 
         if (error) {
@@ -59,7 +60,17 @@ export default function DashboardPage() {
   }, []);
 
   if (loading) {
-    return <div>Loading dashboard...</div>;
+    return (
+      <div className="flex flex-col gap-6">
+        <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading dashboard...</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

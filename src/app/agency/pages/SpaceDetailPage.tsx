@@ -98,7 +98,7 @@ export default function SpaceDetailPage() {
         };
 
         // Fetch space details
-        const spaceResponse = await fetch(`http://localhost:8000/api/spaces/${spaceId}/`, {
+        const spaceResponse = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/spaces/${spaceId}/`, {
             method: 'GET',
             headers,
         });
@@ -113,7 +113,7 @@ export default function SpaceDetailPage() {
         }
 
         // Fetch n8n instances for this space
-        const instanceResponse = await fetch(`http://localhost:8000/api/n8n-instances/?space_id=${spaceId}`, {
+        const instanceResponse = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/n8n-instances/?space_id=${spaceId}`, {
             method: 'GET',
             headers,
         });
@@ -131,7 +131,7 @@ export default function SpaceDetailPage() {
         }
 
         // Fetch automations for the workspace
-        const automationResponse = await fetch(`http://localhost:8000/api/automations/`, {
+        const automationResponse = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/automations/`, {
             method: 'GET',
             headers,
         });
@@ -145,7 +145,7 @@ export default function SpaceDetailPage() {
         }
 
         // Fetch deployments for this space
-        const deploymentsResponse = await fetch(`http://localhost:8000/api/deployments/space/${spaceId}/`, {
+        const deploymentsResponse = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/deployments/space/${spaceId}/`, {
             method: 'GET',
             headers,
         });
@@ -187,7 +187,7 @@ export default function SpaceDetailPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/n8n-instances/', {
+      const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/n8n-instances/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -227,7 +227,7 @@ export default function SpaceDetailPage() {
           return;
         }
 
-        const response = await fetch(`http://localhost:8000/api/n8n-instances/${instance.id}/`, {
+        const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/n8n-instances/${instance.id}/`, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${sessionData.session.access_token}`,

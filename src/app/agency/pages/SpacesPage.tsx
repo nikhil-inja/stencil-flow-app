@@ -71,7 +71,7 @@ export default function SpacesPage() {
       }
 
       // Make direct API call to Django backend
-      const response = await fetch('http://localhost:8000/api/spaces/', {
+      const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/spaces/`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -121,7 +121,7 @@ export default function SpacesPage() {
       };
 
       // Make direct API call to Django backend
-      const response = await fetch('http://localhost:8000/api/spaces/', {
+      const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/spaces/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -171,7 +171,7 @@ export default function SpacesPage() {
         }
 
         // Make direct API call to Django backend
-        const response = await fetch(`http://localhost:8000/api/spaces/${spaceId}/`, {
+        const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/spaces/${spaceId}/`, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${sessionData.session.access_token}`,
