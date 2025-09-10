@@ -213,3 +213,23 @@ class ExecutionAnalyticsResponseSerializer(serializers.Serializer):
     daily_stats = DailyExecutionStatsSerializer(many=True)
     period_start = serializers.DateField()
     period_end = serializers.DateField()
+
+
+class WorkflowFlowchartRequestSerializer(serializers.Serializer):
+    """Serializer for workflow flowchart request"""
+    workflow_id = serializers.CharField(help_text="N8N workflow ID to generate flowchart for")
+    include_execution_data = serializers.BooleanField(
+        default=False, 
+        help_text="Whether to include execution data in the analysis"
+    )
+
+
+class WorkflowFlowchartResponseSerializer(serializers.Serializer):
+    """Serializer for workflow flowchart response"""
+    workflow_id = serializers.CharField()
+    mermaid_diagram = serializers.CharField(help_text="Mermaid diagram syntax")
+    workflow_name = serializers.CharField(help_text="Name of the workflow")
+    node_count = serializers.IntegerField(help_text="Number of nodes in the workflow")
+    connection_count = serializers.IntegerField(help_text="Number of connections in the workflow")
+    last_updated = serializers.DateTimeField(help_text="When the diagram was last generated")
+    generation_method = serializers.CharField(help_text="Method used to generate the diagram (llm, template, etc.)")

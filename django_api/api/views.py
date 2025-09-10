@@ -2326,3 +2326,282 @@ def get_execution_analytics(request):
         return Response({
             'error': f'Internal server error: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_workflow_flowchart(request):
+    """
+    Generate a Mermaid flowchart diagram for a specific workflow
+    Uses LLM to analyze workflow structure and create a visual diagram
+    """
+    from .serializers import WorkflowFlowchartRequestSerializer, WorkflowFlowchartResponseSerializer
+    from datetime import datetime
+    import requests
+    import json
+    import re
+    
+    try:
+        # Validate request data
+        request_serializer = WorkflowFlowchartRequestSerializer(data=request.data)
+        if not request_serializer.is_valid():
+            return Response(request_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        workflow_id = request_serializer.validated_data['workflow_id']
+        include_execution_data = request_serializer.validated_data.get('include_execution_data', False)
+        
+        # Get user's workspace
+        user_profile = request.user.profile
+        workspace = user_profile.workspace
+        
+        # Find the deployment for this workflow
+        try:
+            deployment = Deployment.objects.get(n8n_workflow_id=workflow_id)
+            automation = deployment.automation
+        except Deployment.DoesNotExist:
+            return Response({
+                'error': f'Workflow {workflow_id} not found in deployments'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get the n8n instance for this workflow's space
+        # IMPORTANT: We must use the space-specific instance because the workflow_id
+        # is specific to that instance and won't exist in the master instance
+        try:
+            n8n_instance = N8nInstance.objects.get(space=deployment.space)
+        except N8nInstance.DoesNotExist:
+            return Response({
+                'error': f'No n8n instance configured for space "{deployment.space.name}". Please configure the n8n instance for this space.',
+                'details': {
+                    'space_id': str(deployment.space.id),
+                    'space_name': deployment.space.name,
+                    'workflow_id': workflow_id
+                }
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Fetch workflow data from n8n
+        # Ensure proper URL construction (remove trailing slash from instance_url)
+        base_url = n8n_instance.instance_url.rstrip('/')
+        workflow_url = f"{base_url}/api/v1/workflows/{workflow_id}"
+        headers = {
+            'X-N8N-API-KEY': n8n_instance.api_key,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+        
+        # Debug logging
+        print(f"🔍 Debug - n8n_instance.instance_url: {n8n_instance.instance_url}")
+        print(f"🔍 Debug - base_url: {base_url}")
+        print(f"🔍 Debug - workflow_url: {workflow_url}")
+        print(f"🔍 Debug - api_key: {n8n_instance.api_key[:10]}...")
+        
+        try:
+            workflow_response = requests.get(workflow_url, headers=headers, timeout=30)
+            
+            if workflow_response.status_code == 404:
+                return Response({
+                    'error': f'Workflow {workflow_id} not found in n8n instance'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            if not workflow_response.ok:
+                return Response({
+                    'error': f'n8n API error: {workflow_response.text}',
+                    'details': {
+                        'status_code': workflow_response.status_code,
+                        'url': workflow_url,
+                        'response_text': workflow_response.text[:500]  # First 500 chars
+                    }
+                }, status=status.HTTP_502_BAD_GATEWAY)
+            
+            # Check if response is empty or not JSON
+            response_text = workflow_response.text.strip()
+            if not response_text:
+                return Response({
+                    'error': 'n8n API returned empty response',
+                    'details': {
+                        'status_code': workflow_response.status_code,
+                        'url': workflow_url,
+                        'headers': dict(workflow_response.headers)
+                    }
+                }, status=status.HTTP_502_BAD_GATEWAY)
+            
+            try:
+                workflow_data = workflow_response.json()
+            except ValueError as json_error:
+                return Response({
+                    'error': f'n8n API returned invalid JSON: {str(json_error)}',
+                    'details': {
+                        'status_code': workflow_response.status_code,
+                        'url': workflow_url,
+                        'response_text': response_text[:500],
+                        'content_type': workflow_response.headers.get('content-type', 'unknown')
+                    }
+                }, status=status.HTTP_502_BAD_GATEWAY)
+            
+        except requests.exceptions.RequestException as e:
+            return Response({
+                'error': f'Failed to connect to n8n instance: {str(e)}',
+                'details': {
+                    'url': workflow_url,
+                    'error_type': type(e).__name__
+                }
+            }, status=status.HTTP_502_BAD_GATEWAY)
+        
+        # Extract workflow information
+        workflow_name = workflow_data.get('name', automation.name)
+        nodes = workflow_data.get('nodes', [])
+        connections = workflow_data.get('connections', {})
+        
+        # Generate Mermaid diagram using LLM
+        mermaid_diagram = generate_mermaid_diagram_with_llm(
+            workflow_name, 
+            nodes, 
+            connections, 
+            include_execution_data
+        )
+        
+        # Count nodes and connections
+        node_count = len(nodes)
+        connection_count = sum(len(conns) for conns in connections.values())
+        
+        # Prepare response data
+        response_data = {
+            'workflow_id': workflow_id,
+            'mermaid_diagram': mermaid_diagram,
+            'workflow_name': workflow_name,
+            'node_count': node_count,
+            'connection_count': connection_count,
+            'last_updated': datetime.now(),
+            'generation_method': 'llm_analysis'
+        }
+        
+        # Validate response with serializer
+        response_serializer = WorkflowFlowchartResponseSerializer(data=response_data)
+        if response_serializer.is_valid():
+            return Response(response_serializer.validated_data)
+        else:
+            return Response(response_serializer.errors, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except Exception as e:
+        return Response({
+            'error': f'Internal server error: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def generate_mermaid_diagram_with_llm(workflow_name, nodes, connections, include_execution_data=False):
+    """
+    Generate a Mermaid diagram using LLM analysis of workflow structure
+    """
+    import openai
+    import re
+    from decouple import config
+    
+    # Get OpenAI API key from environment
+    openai_api_key = config('OPENAI_API_KEY', default='')
+    
+    if not openai_api_key:
+        # Fallback to template-based generation if no OpenAI key
+        return generate_template_mermaid_diagram(workflow_name, nodes, connections)
+    
+    try:
+        # Prepare workflow data for LLM analysis
+        workflow_summary = {
+            'name': workflow_name,
+            'nodes': [
+                {
+                    'id': node.get('id', ''),
+                    'name': node.get('name', ''),
+                    'type': node.get('type', ''),
+                    'parameters': node.get('parameters', {})
+                }
+                for node in nodes
+            ],
+            'connections': connections
+        }
+        
+        # Create prompt for LLM
+        prompt = f"""
+        Analyze this n8n workflow and generate a Mermaid flowchart diagram.
+        
+        Workflow Name: {workflow_name}
+        Nodes: {json.dumps(workflow_summary['nodes'], indent=2)}
+        Connections: {json.dumps(connections, indent=2)}
+        
+        Requirements:
+        1. Use Mermaid flowchart syntax (graph TD)
+        2. Create meaningful node labels based on node names and types
+        3. Show the flow from start to end
+        4. Use appropriate shapes for different node types:
+           - Rectangles for regular nodes
+           - Diamonds for decision nodes
+           - Circles for start/end nodes
+        5. Keep node labels concise but descriptive
+        6. Ensure all connections are properly represented
+        
+        Generate only the Mermaid diagram code, no explanations.
+        """
+        
+        # Call OpenAI API
+        client = openai.OpenAI(api_key=openai_api_key)
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an expert at creating Mermaid diagrams for workflow visualization. Generate clean, readable flowchart diagrams."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1000,
+            temperature=0.3
+        )
+        
+        mermaid_code = response.choices[0].message.content.strip()
+        
+        # Clean up the response (remove markdown code blocks if present)
+        mermaid_code = re.sub(r'^```mermaid\s*\n', '', mermaid_code)
+        mermaid_code = re.sub(r'^```\s*\n', '', mermaid_code)
+        mermaid_code = re.sub(r'\n```$', '', mermaid_code)
+        
+        return mermaid_code
+        
+    except Exception as e:
+        # Fallback to template-based generation on LLM error
+        print(f"LLM generation failed: {e}")
+        return generate_template_mermaid_diagram(workflow_name, nodes, connections)
+
+
+def generate_template_mermaid_diagram(workflow_name, nodes, connections):
+    """
+    Generate a basic Mermaid diagram using template-based approach
+    """
+    import re
+    diagram_lines = ["graph TD"]
+    
+    # Add nodes
+    for node in nodes:
+        node_id = node.get('id', '')
+        node_name = node.get('name', 'Unknown')
+        node_type = node.get('type', '')
+        
+        # Clean node ID for Mermaid (remove special characters)
+        clean_id = re.sub(r'[^a-zA-Z0-9_]', '_', node_id)
+        
+        # Determine node shape based on type
+        if 'trigger' in node_type.lower() or 'webhook' in node_type.lower():
+            diagram_lines.append(f"    {clean_id}[\"🚀 {node_name}\"]")
+        elif 'condition' in node_type.lower() or 'if' in node_type.lower():
+            diagram_lines.append(f"    {clean_id}{{\"❓ {node_name}\"}}")
+        elif 'end' in node_type.lower() or 'stop' in node_type.lower():
+            diagram_lines.append(f"    {clean_id}[\"🏁 {node_name}\"]")
+        else:
+            diagram_lines.append(f"    {clean_id}[\"⚙️ {node_name}\"]")
+    
+    # Add connections
+    for source_id, targets in connections.items():
+        source_clean = re.sub(r'[^a-zA-Z0-9_]', '_', source_id)
+        
+        for target_info in targets:
+            target_id = target_info.get('node', '')
+            target_clean = re.sub(r'[^a-zA-Z0-9_]', '_', target_id)
+            
+            if source_clean and target_clean:
+                diagram_lines.append(f"    {source_clean} --> {target_clean}")
+    
+    return '\n'.join(diagram_lines)
