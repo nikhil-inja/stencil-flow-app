@@ -233,3 +233,26 @@ class WorkflowFlowchartResponseSerializer(serializers.Serializer):
     connection_count = serializers.IntegerField(help_text="Number of connections in the workflow")
     last_updated = serializers.DateTimeField(help_text="When the diagram was last generated")
     generation_method = serializers.CharField(help_text="Method used to generate the diagram (llm, template, etc.)")
+
+
+class AITokenUsageRequestSerializer(serializers.Serializer):
+    """Serializer for AI token usage request"""
+    workflow_id = serializers.CharField(help_text="N8N workflow ID to get AI token usage for")
+
+
+class DailyTokenUsageSerializer(serializers.Serializer):
+    """Serializer for daily token usage statistics"""
+    date = serializers.DateField()
+    tokens_used = serializers.IntegerField()
+    cost = serializers.FloatField()
+
+
+class AITokenUsageResponseSerializer(serializers.Serializer):
+    """Serializer for AI token usage response"""
+    workflow_id = serializers.CharField()
+    total_tokens_used = serializers.IntegerField()
+    total_cost = serializers.FloatField()
+    daily_token_usage = DailyTokenUsageSerializer(many=True)
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()
+    ai_nodes_found = serializers.ListField(child=serializers.CharField(), help_text="List of AI node types found in the workflow")

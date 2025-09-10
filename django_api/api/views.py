@@ -2330,6 +2330,316 @@ def get_execution_analytics(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+def get_ai_token_usage(request):
+    """
+    Get AI token usage analytics for a specific workflow from n8n
+    Returns token consumption and cost data for the past 7 days
+    """
+    from collections import defaultdict
+    from datetime import datetime, timedelta
+    from .serializers import AITokenUsageRequestSerializer, AITokenUsageResponseSerializer
+    
+    # Token pricing per 1K tokens (as of 2024)
+    TOKEN_PRICING = {
+        'gpt-3.5-turbo': {'input': 0.0005, 'output': 0.0015},  # per 1K tokens
+        'gpt-4': {'input': 0.03, 'output': 0.06},
+        'gpt-4-turbo': {'input': 0.01, 'output': 0.03},
+        'claude-3-haiku': {'input': 0.00025, 'output': 0.00125},
+        'claude-3-sonnet': {'input': 0.003, 'output': 0.015},
+        'claude-3-opus': {'input': 0.015, 'output': 0.075},
+        'groq/llama3-8b': {'input': 0.0001, 'output': 0.0001},
+        'groq/llama3-70b': {'input': 0.0006, 'output': 0.0008},
+        'groq/mixtral-8x7b': {'input': 0.00027, 'output': 0.00027},
+        'groq/compound': {'input': 0.0001, 'output': 0.0001},
+        'meta-llama/llama-guard-4-12b': {'input': 0.0001, 'output': 0.0001},
+    }
+    
+    # AI node types that consume tokens
+    AI_NODE_TYPES = [
+        '@n8n/n8n-nodes-langchain.openAi',
+        '@n8n/n8n-nodes-langchain.agent',
+        '@n8n/n8n-nodes-langchain.lmChatGroq',
+        '@n8n/n8n-nodes-langchain.lmChatAnthropic',
+        '@n8n/n8n-nodes-langchain.lmChatOpenAi',
+        '@n8n/n8n-nodes-langchain.lmChatCohere',
+        '@n8n/n8n-nodes-langchain.lmChatHuggingFace',
+    ]
+    
+    # Validate request data
+    serializer = AITokenUsageRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    workflow_id = serializer.validated_data['workflow_id']
+    
+    try:
+        # Get user's profile and workspace
+        profile = get_object_or_404(Profile, user=request.user)
+        workspace = profile.workspace
+        
+        # Find the deployment for this workflow_id to get the space
+        try:
+            deployment = Deployment.objects.select_related('space').get(
+                n8n_workflow_id=workflow_id,
+                automation__workspace=workspace
+            )
+            space = deployment.space
+        except Deployment.DoesNotExist:
+            return Response({
+                'error': f'No deployment found for workflow {workflow_id}'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get n8n instance for this space (space-specific or fallback to master)
+        instance = None
+        try:
+            # Try space-specific instance first
+            instance = N8nInstance.objects.get(space=space)
+        except N8nInstance.DoesNotExist:
+            # Fall back to workspace master instance
+            try:
+                instance = N8nInstance.objects.get(workspace=workspace, space__isnull=True)
+            except N8nInstance.DoesNotExist:
+                return Response({
+                    'error': 'No n8n instance configured for this space or workspace'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Calculate date range (past 7 days)
+        end_date = timezone.now().date()
+        start_date = end_date - timedelta(days=6)  # 7 days total including today
+        
+        # Fetch executions from n8n API with includeData=true to get token information
+        n8n_url = instance.instance_url.rstrip('/')
+        
+        # Build query parameters for the executions API
+        params = {
+            'workflowId': workflow_id,
+            'limit': 250,  # n8n API limit is 250 per request
+            'includeData': 'true'  # We need execution data to extract token usage
+        }
+        
+        executions_url = f"{n8n_url}/api/v1/executions"
+        
+        # Fetch all executions using pagination
+        all_executions = []
+        cursor = None
+        page_count = 0
+        
+        try:
+            while True:
+                page_count += 1
+                # Add cursor to params if we have one
+                if cursor:
+                    params['cursor'] = cursor
+                
+                n8n_response = requests.get(
+                    executions_url,
+                    headers={'X-N8N-API-KEY': instance.api_key},
+                    params=params,
+                    timeout=30
+                )
+                
+                if n8n_response.status_code == 401:
+                    return Response({
+                        'error': 'Invalid n8n API key'
+                    }, status=status.HTTP_401_UNAUTHORIZED)
+                
+                if n8n_response.status_code == 404:
+                    return Response({
+                        'error': f'Workflow {workflow_id} not found'
+                    }, status=status.HTTP_404_NOT_FOUND)
+                
+                if not n8n_response.ok:
+                    try:
+                        error_data = n8n_response.json()
+                        error_message = error_data.get('message', f'HTTP {n8n_response.status_code}')
+                    except:
+                        error_message = n8n_response.text or f'HTTP {n8n_response.status_code}'
+                    
+                    return Response({
+                        'error': f'n8n API error: {error_message}'
+                    }, status=status.HTTP_502_BAD_GATEWAY)
+                
+                executions_data = n8n_response.json()
+                page_executions = executions_data.get('data', [])
+                
+                # Add executions from this page to our collection
+                all_executions.extend(page_executions)
+                
+                # Check if there are more pages
+                next_cursor = executions_data.get('nextCursor')
+                if not next_cursor:
+                    break
+                
+                cursor = next_cursor
+                
+                # Remove cursor from params for next iteration
+                if 'cursor' in params:
+                    del params['cursor']
+            
+            executions = all_executions
+            
+        except requests.exceptions.RequestException as e:
+            return Response({
+                'error': f'Failed to connect to n8n instance: {str(e)}'
+            }, status=status.HTTP_502_BAD_GATEWAY)
+        
+        # Process executions data to extract AI token usage
+        total_tokens_used = 0
+        total_cost = 0.0
+        
+        # Daily stats dictionary: date -> {tokens, cost}
+        daily_stats = defaultdict(lambda: {'tokens': 0, 'cost': 0.0})
+        
+        # Track AI nodes found in the workflow
+        ai_nodes_found = set()
+        
+        def extract_tokens_from_run_data(run_data, execution_date):
+            """Extract token usage from runData for a specific execution"""
+            nonlocal total_tokens_used, total_cost
+            
+            if not run_data:
+                return
+            
+            for node_name, node_executions in run_data.items():
+                if not isinstance(node_executions, list):
+                    continue
+                
+                for execution in node_executions:
+                    if not isinstance(execution, dict):
+                        continue
+                    
+                    # Check if this is a successful AI node execution
+                    execution_status = execution.get('executionStatus')
+                    if execution_status != 'success':
+                        continue
+                    
+                    # Look for token usage in the execution data
+                    execution_data = execution.get('data', {})
+                    if not execution_data:
+                        continue
+                    
+                    # Check for token usage in various possible locations
+                    token_info = None
+                    
+                    # Method 1: Direct token usage in execution data
+                    if 'usage' in execution_data:
+                        token_info = execution_data['usage']
+                    elif 'tokenUsage' in execution_data:
+                        token_info = execution_data['tokenUsage']
+                    elif 'tokens' in execution_data:
+                        token_info = execution_data['tokens']
+                    
+                    # Method 2: Look in nested data structures
+                    if not token_info:
+                        for key, value in execution_data.items():
+                            if isinstance(value, dict):
+                                if 'usage' in value:
+                                    token_info = value['usage']
+                                    break
+                                elif 'tokenUsage' in value:
+                                    token_info = value['tokenUsage']
+                                    break
+                    
+                    # Method 3: Look for LLM response data
+                    if not token_info:
+                        # Check if this looks like an LLM response
+                        if 'choices' in execution_data or 'completion' in execution_data:
+                            # Try to estimate tokens from response length
+                            response_text = str(execution_data.get('completion', ''))
+                            if response_text:
+                                # Rough estimation: 1 token ≈ 4 characters
+                                estimated_tokens = len(response_text) // 4
+                                token_info = {
+                                    'prompt_tokens': estimated_tokens // 2,
+                                    'completion_tokens': estimated_tokens // 2,
+                                    'total_tokens': estimated_tokens
+                                }
+                    
+                    if token_info:
+                        # Extract token counts
+                        prompt_tokens = token_info.get('prompt_tokens', 0) or token_info.get('input_tokens', 0)
+                        completion_tokens = token_info.get('completion_tokens', 0) or token_info.get('output_tokens', 0)
+                        total_tokens = token_info.get('total_tokens', 0) or (prompt_tokens + completion_tokens)
+                        
+                        if total_tokens > 0:
+                            # Calculate cost based on model (we'll need to infer from node type)
+                            model_name = 'gpt-3.5-turbo'  # Default fallback
+                            cost_per_1k_input = TOKEN_PRICING.get(model_name, {}).get('input', 0.001)
+                            cost_per_1k_output = TOKEN_PRICING.get(model_name, {}).get('output', 0.002)
+                            
+                            cost = (prompt_tokens / 1000 * cost_per_1k_input) + (completion_tokens / 1000 * cost_per_1k_output)
+                            
+                            total_tokens_used += total_tokens
+                            total_cost += cost
+                            daily_stats[execution_date]['tokens'] += total_tokens
+                            daily_stats[execution_date]['cost'] += cost
+        
+        # Process each execution
+        for execution in executions:
+            # Parse execution date
+            started_at = execution.get('startedAt')
+            if not started_at:
+                continue
+                
+            try:
+                execution_date = datetime.fromisoformat(started_at.replace('Z', '+00:00')).date()
+            except (ValueError, AttributeError):
+                continue
+            
+            # Only include executions within our date range
+            if execution_date < start_date or execution_date > end_date:
+                continue
+            
+            # Extract token usage from runData
+            execution_data = execution.get('data', {})
+            if execution_data:
+                result_data = execution_data.get('resultData', {})
+                run_data = result_data.get('runData', {})
+                extract_tokens_from_run_data(run_data, execution_date)
+        
+        # Build daily stats array
+        daily_stats_array = []
+        current_date = start_date
+        
+        while current_date <= end_date:
+            stats = daily_stats[current_date]
+            daily_tokens = stats['tokens']
+            daily_cost = stats['cost']
+            
+            daily_stats_array.append({
+                'date': current_date,
+                'tokens_used': daily_tokens,
+                'cost': round(daily_cost, 4)
+            })
+            
+            current_date += timedelta(days=1)
+        
+        # Prepare response data
+        response_data = {
+            'workflow_id': workflow_id,
+            'total_tokens_used': total_tokens_used,
+            'total_cost': round(total_cost, 4),
+            'daily_token_usage': daily_stats_array,
+            'period_start': start_date,
+            'period_end': end_date,
+            'ai_nodes_found': list(ai_nodes_found)
+        }
+        
+        # Validate response with serializer
+        response_serializer = AITokenUsageResponseSerializer(data=response_data)
+        if response_serializer.is_valid():
+            return Response(response_serializer.validated_data)
+        else:
+            return Response(response_serializer.errors, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except Exception as e:
+        return Response({
+            'error': f'Internal server error: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def get_workflow_flowchart(request):
     """
     Generate a Mermaid flowchart diagram for a specific workflow
