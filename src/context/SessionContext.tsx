@@ -2,22 +2,15 @@
 
 import { useState, useEffect, createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
-import type { User } from '@supabase/supabase-js';
-import { supabase } from '../supabaseClient';
-
-// Define the shape of our profile data
-interface Profile {
-  id: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  organization_id: string;
-}
+import { apiClient } from '../lib/apiClient';
+import type { User, Profile } from '../lib/apiClient';
 
 // Define the shape of the context value
 interface SessionContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
+  refreshSession: () => Promise<void>;
 }
 
 // Create the context with a default value of undefined
@@ -30,50 +23,103 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchSession = async () => {
+      if (!isMounted) return;
+      
       setLoading(true);
-      // 1. Get the current session, which includes the user object
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-
-      // 2. If there's a user, fetch their profile from our 'profiles' table
-      if (session?.user) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, organization_id')
-          .eq('id', session.user.id)
-          .single(); // .single() expects one row and returns an object instead of an array
-
-        if (error) {
-          console.error('Error fetching profile:', error);
-        } else if (data) {
-          setProfile(data);
+      try {
+        console.log('🔍 Fetching session...');
+        const { data, error } = await apiClient.auth.getSession();
+        console.log('📊 Session response:', { data, error });
+        
+        if (!isMounted) return; // Component unmounted during fetch
+        
+        if (error || !data?.session) {
+          console.log('❌ No session found');
+          setUser(null);
+          setProfile(null);
+        } else {
+          console.log('✅ Session found:', data.session);
+          setUser(data.session.user);
+          
+          // Use profile data from session response if available
+          if (data.session.profile) {
+            console.log('✅ Profile found in session:', data.session.profile);
+            setProfile(data.session.profile);
+          } else {
+            console.log('⚠️ No profile in session, creating fallback');
+            // Fallback profile if backend doesn't provide it
+            setProfile({
+              id: data.session.user.id,
+              full_name: data.session.user.full_name,
+              avatar_url: data.session.user.avatar_url,
+              workspace: {
+                id: 'default',
+                name: 'Default Workspace'
+              },
+              workspace_id: 'default', // For backward compatibility
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+          }
+        }
+      } catch (error) {
+        console.error('💥 Error fetching session:', error);
+        if (!isMounted) return;
+        
+        setUser(null);
+        setProfile(null);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
         }
       }
-      setLoading(false);
     };
 
     fetchSession();
-
-    // 3. Listen for changes in authentication state (login/logout)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (!session?.user) {
-        setProfile(null); // Clear profile on logout
-      } else {
-        fetchSession(); // Refetch session and profile on login
-      }
-    });
-
+    
     return () => {
-      subscription.unsubscribe();
+      isMounted = false;
     };
   }, []);
+
+  // Function to manually refresh session (useful for retry scenarios)
+  const refreshSession = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await apiClient.auth.getSession();
+      
+      if (error || !data?.session) {
+        setUser(null);
+        setProfile(null);
+      } else {
+        setUser(data.session.user);
+        setProfile(data.session.profile || {
+          id: data.session.user.id,
+          full_name: data.session.user.full_name,
+          avatar_url: data.session.user.avatar_url,
+          workspace: { id: 'default', name: 'Default Workspace' },
+          workspace_id: 'default',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing session:', error);
+      setUser(null);
+      setProfile(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const value = {
     user,
     profile,
     loading,
+    refreshSession,
   };
 
   // The provider makes the 'value' available to all child components

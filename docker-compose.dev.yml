@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  # Django Backend (Development)
+  django:
+    build:
+      context: ./django_api
+      dockerfile: Dockerfile
+    container_name: stencil_flow_django_dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=stencil_flow_dev
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres_password
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000
+      - CORS_ALLOW_ALL_ORIGINS=True
+      - SITE_URL=http://localhost:3000
+      - SERVER_URL=http://localhost:8000
+    env_file:
+      - ./django_api/.env
+    volumes:
+      - ./django_api:/app
+      - django_static_dev:/app/staticfiles
+      - django_media_dev:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - stencil_flow_network_dev
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn --bind 0.0.0.0:8000 --workers 1 --reload --timeout 120 stencil_flow_api.wsgi:application"
+
+  # PostgreSQL Database (Development)
+  postgres:
+    image: postgres:15-alpine
+    container_name: stencil_flow_postgres_dev
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=stencil_flow_dev
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres_password
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./database_schema_update.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - stencil_flow_network_dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stencil_flow_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (Development)
+  redis:
+    image: redis:7-alpine
+    container_name: stencil_flow_redis_dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+    networks:
+      - stencil_flow_network_dev
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data_dev:
+    driver: local
+  redis_data_dev:
+    driver: local
+  django_static_dev:
+    driver: local
+  django_media_dev:
+    driver: local
+
+networks:
+  stencil_flow_network_dev:
+    driver: bridge
+

@@ -27,14 +27,14 @@ serve(async (req) => {
     const { emailToInvite } = await req.json();
     if (!emailToInvite) throw new Error("Email to invite is required.");
 
-    // 3. Get the inviter's profile to find their organization_id
+    // 3. Get the inviter's profile to find their workspace_id
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('organization_id')
+      .select('workspace_id')
       .eq('id', user.id)
       .single();
 
@@ -47,7 +47,7 @@ serve(async (req) => {
     const { error: inviteError } = await supabaseAdmin
       .from('invitations')
       .insert({
-        organization_id: profile.organization_id,
+        workspace_id: profile.workspace_id,
         invited_by_user_id: user.id,
         invited_user_email: emailToInvite,
         token: token,

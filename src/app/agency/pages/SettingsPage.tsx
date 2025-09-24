@@ -1,0 +1,297 @@
+// src/pages/TeamSettingsPage.tsx
+
+import { useState, type FormEvent, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
+
+// Import Shadcn Components
+import { Button } from "@/shared/components/ui/button";
+import { Input } from "@/shared/components/ui/input";
+import { Label } from "@/shared/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
+import { apiClient } from '@/lib/apiClient';
+import { useSession } from '@/context/SessionContext';
+import { config } from '@/config';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/shared/components/ui/alert-dialog';
+import { checkGitHubConnection, createGitHubConnectionHandler } from '@/utils/githubAuth';
+
+// Temporarily commented out - multi-account workspaces not needed for now
+// interface TeamMember {
+//     id: string;
+//     full_name: string | null;
+//     email: string | undefined;
+//     role: string;
+//   }
+
+export default function TeamSettingsPage() {
+    const { profile } = useSession();
+  
+    // Temporarily commented out - multi-account workspaces not needed for now
+    // const [inviteEmail, setInviteEmail] = useState('');
+    // const [isInviting, setIsInviting] = useState(false);
+  
+    // State for the master n8n credentials
+    const [masterUrl, setMasterUrl] = useState('');
+    const [masterApiKey, setMasterApiKey] = useState('');
+    const [isSavingMasterCreds, setIsSavingMasterCreds] = useState(false);
+
+    const [isGitHubConnected, setIsGitHubConnected] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(true);
+    
+    // Temporarily commented out - multi-account workspaces not needed for now
+    // const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  
+    useEffect(() => {
+      if (!profile) return;
+  
+      // This function now fetches both workspace settings and team members
+      const loadPageData = async () => {
+        // Fetch Workspace Settings
+        const { data: workspaceData, error: workspaceError } = await apiClient
+          .from('workspaces')
+          .select('n8n_instances(instance_url)')
+          .eq('id', profile.workspace.id)
+          .single();
+  
+        if (workspaceError) {
+          toast.error("Could not load workspace settings.");
+        } else if (workspaceData && workspaceData.n8n_instances && Array.isArray(workspaceData.n8n_instances) && workspaceData.n8n_instances[0]) {
+          setMasterUrl(workspaceData.n8n_instances[0].instance_url || '');
+        }
+
+        // Temporarily commented out - multi-account workspaces not needed for now
+        // TODO: Implement team members API endpoint
+        // For now, skip team members loading
+        // setTeamMembers([]);
+
+        try {
+            const status = await checkGitHubConnection();
+            setIsGitHubConnected(status.is_connected);
+          } catch (e: any) {
+            console.error("Failed to check GitHub connection:", e);
+            setIsGitHubConnected(false);
+          } finally {
+            setIsConnecting(false);
+          }
+      };
+  
+      loadPageData();
+    }, [profile]);
+
+  // Temporarily commented out - multi-account workspaces not needed for now
+  // const handleInviteUser = async (event: FormEvent) => {
+  //   event.preventDefault();
+  //   if (!inviteEmail) return;
+  //   setIsInviting(true);
+
+  //   try {
+  //     const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+  //     if (sessionError || !sessionData?.session) throw new Error("You must be logged in to invite users.");
+  //     const session = sessionData.session;
+
+  //     const { data, error } = await apiClient.functions.invoke('invite-user', {
+  //       headers: { 'Authorization': `Bearer ${session.access_token}` },
+  //       body: { email_to_invite: inviteEmail },
+  //     });
+
+  //     if (error) throw error;
+
+  //     toast.success(
+  //       (t) => (
+  //         <div className="flex flex-col gap-2">
+  //           <span>Invite link generated!</span>
+  //           <p className="text-xs">Copy this link and send it to your teammate.</p>
+  //           <Input readOnly defaultValue={data.invitation_link} />
+  //           <Button size="sm" onClick={() => toast.dismiss(t.id)}>Dismiss</Button>
+  //         </div>
+  //       ), { duration: 15000 }
+  //     );
+  //     setInviteEmail('');
+
+  //   } catch (error: any) {
+  //     toast.error(`Failed to send invite: ${error.message}`);
+  //   } finally {
+  //     setIsInviting(false);
+  //   }
+  // };
+
+  // Logic for saving master credentials
+  const handleSaveMasterCreds = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!profile) return;
+    setIsSavingMasterCreds(true);
+  
+        try {
+      const { data: sessionData, error: sessionError } = await apiClient.auth.getSession();
+      if (sessionError || !sessionData?.session) throw new Error("You must be logged in.");
+      
+      const response = await fetch(`${config.API_BASE_URL}/n8n/upsert-master-instance/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({
+          instance_url: masterUrl,
+          api_key: masterApiKey
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save credentials');
+      }
+      
+      toast.success('Master n8n instance saved!');
+    } catch (error: any) {
+      toast.error(`Failed to save credentials: ${error.message}`);
+    } finally {
+      setIsSavingMasterCreds(false);
+    }
+  };
+
+  // Create GitHub connection handlers using our utility
+  const { handleConnect, handleDisconnect } = createGitHubConnectionHandler(
+    isGitHubConnected,
+    (connected) => setIsGitHubConnected(connected)
+  );
+
+  return (
+    <div className="container mx-auto p-4 sm:p-6 md:p-8">
+      <header className="mb-8">
+        <Button asChild variant="ghost" className="mb-2 -ml-4">
+          <Link to="/">&larr; Back to Dashboard</Link>
+        </Button>
+        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+      </header>
+
+      <main className="grid gap-8">
+      <Card>
+          <CardHeader>
+            <CardTitle>GitHub Connection</CardTitle>
+            <CardDescription>Connect your GitHub account to enable version control for automations.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isConnecting ? <p>Checking status...</p> : (
+              isGitHubConnected ? (
+                <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-green-600">✓ GitHub Account Connected</p>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="destructive">Disconnect</Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Disconnecting your GitHub account will prevent you from creating or updating automations. You can reconnect at any time.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleDisconnect}>Yes, Disconnect</AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                </div>
+              ) : (
+                <Button onClick={handleConnect}>Connect with GitHub</Button>
+              )
+            )}
+          </CardContent>
+        </Card>
+        {/* Card for Master n8n Instance */}
+        <Card>
+          <CardHeader>
+            <CardTitle>My n8n Instance</CardTitle>
+            <CardDescription>
+              Connect to your own n8n instance to enable direct automation imports.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSaveMasterCreds} className="space-y-4 max-w-sm">
+              <div className="grid w-full items-center gap-1.5">
+                <Label htmlFor="master-url">Your n8n URL</Label>
+                <Input
+                  id="master-url"
+                  type="url"
+                  placeholder="https://my-account.n8n.cloud"
+                  value={masterUrl}
+                  onChange={(e) => setMasterUrl(e.target.value)}
+                  disabled={isSavingMasterCreds}
+                />
+              </div>
+              <div className="grid w-full items-center gap-1.5">
+                <Label htmlFor="master-api-key">Your n8n API Key</Label>
+                <Input
+                  id="master-api-key"
+                  type="password"
+                  placeholder="Enter new key to update..."
+                  value={masterApiKey}
+                  onChange={(e) => setMasterApiKey(e.target.value)}
+                  disabled={isSavingMasterCreds}
+                />
+              </div>
+              <Button type="submit" disabled={isSavingMasterCreds}>
+                {isSavingMasterCreds ? 'Saving...' : 'Save Credentials'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* Temporarily commented out - multi-account workspaces not needed for now */}
+        {/* <Separator />
+
+        {/* Card for Inviting New Members */}
+        {/* <Card>
+          <CardHeader>
+            <CardTitle>Invite New Member</CardTitle>
+            <CardDescription>Invite a new member to your workspace.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleInviteUser} className="flex items-center gap-2 max-w-sm">
+              <div className="grid w-full items-center gap-1.5">
+                <Label htmlFor="email" className="sr-only">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="teammate@example.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  required
+                  disabled={isInviting}
+                />
+              </div>
+              <Button type="submit" disabled={isInviting}>
+                {isInviting ? 'Sending...' : 'Send Invite'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card> */}
+
+        {/* Card for Listing Team Members */}
+        {/* <Card>
+          <CardHeader>
+            <CardTitle>Team Members</CardTitle>
+            <CardDescription>Manage members of your workspace.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="border rounded-md">
+              <ul className="divide-y">
+                {teamMembers.map((member) => (
+                  <li key={member.email} className="flex items-center justify-between p-3">
+                    <div>
+                      <p className="font-medium">{member.full_name}</p>
+                      <p className="text-sm text-muted-foreground">{member.email}</p>
+                    </div>
+                    <span className="text-sm font-medium text-muted-foreground">{member.role}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </CardContent>
+        </Card> */}
+      </main>
+    </div>
+  );
+}   

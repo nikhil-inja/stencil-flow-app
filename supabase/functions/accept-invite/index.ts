@@ -22,10 +22,10 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Find the pending invitation to get the organization_id
+    // Find the pending invitation to get the workspace_id
     const { data: invitation, error: tokenError } = await supabaseAdmin
       .from('invitations')
-      .select('id, organization_id')
+      .select('id, workspace_id')
       .eq('token', token)
       .eq('status', 'pending')
       .single();
@@ -37,10 +37,10 @@ serve(async (req) => {
       email: email,
       password: password,
       email_confirm: true,
-      // THIS IS THE KEY: We pass the organization ID in the user_metadata
+      // THIS IS THE KEY: We pass the workspace ID in the user_metadata
       user_metadata: { 
         full_name: fullName,
-        invited_to_org: invitation.organization_id 
+        invited_to_workspace: invitation.workspace_id 
       },
     });
 
@@ -53,7 +53,7 @@ serve(async (req) => {
       .update({ status: 'accepted' })
       .eq('id', invitation.id);
 
-    // The trigger now handles profile creation and organization assignment. No more work needed here!
+    // The trigger now handles profile creation and workspace assignment. No more work needed here!
 
     return new Response(JSON.stringify({ message: 'Account created successfully!' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

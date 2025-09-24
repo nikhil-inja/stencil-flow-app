@@ -23,30 +23,31 @@ serve(async (req) => {
     const { data: { user } } = await supabaseUserClient.auth.getUser();
     if (!user) throw new Error("User not authenticated.");
 
-    // 2. Get blueprintId and githubToken from request body
-    const { blueprintId, githubToken } = await req.json();
-    if (!blueprintId || !githubToken) {
-      throw new Error("Missing blueprintId or githubToken.");
+    // 2. Get automationId and githubToken from request body
+    const { automationId, githubToken } = await req.json();
+    if (!automationId || !githubToken) {
+      throw new Error("Missing automationId or githubToken.");
     }
 
-    // 3. Get the blueprint's repo URL from our database
+    // 3. Get the automation's repo URL from our database
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
     
-    const { data: blueprint } = await supabaseAdmin
-      .from('blueprints')
-      .select('git_repository')
-      .eq('id', blueprintId)
+    const { data: automation } = await supabaseAdmin
+      .from('automations')
+      .select('git_repository, workflow_path')
+      .eq('id', automationId)
       .single();
 
-    if (!blueprint) throw new Error("Blueprint not found.");
+    if (!automation) throw new Error("Automation not found.");
     
-    const repoPath = new URL(blueprint.git_repository).pathname.substring(1);
+    const repoPath = new URL(automation.git_repository).pathname.substring(1);
+    const definitionFilePath = `${automation.workflow_path}/definition.json`;
 
-    // 4. Call the GitHub API to get the list of commits
-    const commitsResponse = await fetch(`https://api.github.com/repos/${repoPath}/commits`, {
+    // 4. Call the GitHub API to get the list of commits for the specific workflow file
+    const commitsResponse = await fetch(`https://api.github.com/repos/${repoPath}/commits?path=${definitionFilePath}`, {
       headers: {
         'Authorization': `token ${githubToken}`,
         'Accept': 'application/vnd.github.v3+json',

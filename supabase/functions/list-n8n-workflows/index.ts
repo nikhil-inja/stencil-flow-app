@@ -23,30 +23,30 @@ serve(async (req) => {
     const { data: { user } } = await supabaseUserClient.auth.getUser();
     if (!user) throw new Error("User not authenticated.");
 
-    // 2. Get the user's organization ID from their profile
+    // 2. Get the user's workspace ID from their profile
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('organization_id')
+      .select('workspace_id')
       .eq('id', user.id)
       .single();
 
     if (!profile) throw new Error("Could not find user profile.");
 
-    // 3. Get the master n8n credentials from the organization record
-    const { data: organization } = await supabaseAdmin
-      .from('organizations')
+    // 3. Get the master n8n credentials from the workspace record
+    const { data: workspace } = await supabaseAdmin
+      .from('workspaces')
       .select('master_n8n_instance_id, n8n_instances!master_n8n_instance_id(instance_url, api_key)')
-      .eq('id', profile.organization_id)
+      .eq('id', profile.workspace_id)
       .single();
 
-    const masterInstanceArr = organization?.n8n_instances;
+    const masterInstanceArr = workspace?.n8n_instances;
     const masterInstance = Array.isArray(masterInstanceArr) ? masterInstanceArr[0] : masterInstanceArr;
     if (
-      !organization ||
+      !workspace ||
       !masterInstance ||
       !masterInstance.instance_url ||
       !masterInstance.api_key
@@ -58,17 +58,29 @@ serve(async (req) => {
     const cleanedUrl = masterInstance.instance_url.replace(/\/$/, "");
     const targetUrl = `${cleanedUrl}/api/v1/workflows`;
     
-    const response = await fetch(targetUrl, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'X-N8N-API-KEY': masterInstance.api_key,
-      },
-    });
+    let response;
+    try {
+      response = await fetch(targetUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'X-N8N-API-KEY': masterInstance.api_key,
+        },
+      });
+    } catch (fetchError) {
+      // Network or connection error
+      throw new Error("Failed to connect to N8N instance. Please check your N8N URL and network connection.");
+    }
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`n8n API Error (Status ${response.status}): ${errorText}`);
+      // Handle specific HTTP status codes with user-friendly messages
+      if (response.status === 401) {
+        throw new Error("Invalid N8N API key. Please check your N8N credentials in Settings.");
+      } else if (response.status >= 500) {
+        throw new Error("N8N server is currently unavailable. Please try again later.");
+      } else {
+        throw new Error("Failed to connect to N8N instance. Please check your N8N configuration.");
+      }
     }
 
     const workflows = await response.json();

@@ -1,0 +1,40 @@
+# Django Settings (Production)
+SECRET_KEY=your-production-secret-key-here
+DEBUG=False
+ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,your-domain.com
+
+# Database
+DB_NAME=stencil_flow_prod
+DB_USER=postgres
+DB_PASSWORD=your-secure-production-password
+DB_HOST=postgres
+DB_PORT=5432
+
+# JWT Settings
+JWT_SECRET_KEY=your-production-jwt-secret-key
+
+# CORS Settings
+CORS_ALLOWED_ORIGINS=https://your-domain.com,https://www.your-domain.com
+CORS_ALLOW_ALL_ORIGINS=False
+
+# Site URL (frontend for OAuth redirects)
+SITE_URL=https://your-domain.com
+
+# Server URL (backend for GitHub OAuth callbacks)
+SERVER_URL=https://your-domain.com
+
+# GitHub OAuth Settings
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_CLIENT_SECRET=your-github-client-secret
+GITHUB_CALLBACK_URL=https://your-domain.com/api/auth/github/callback/
+
+# N8N Settings
+DEFAULT_N8N_INSTANCE_URL=your-n8n-instance-url
+DEFAULT_N8N_API_KEY=your-n8n-api-key
+
+# AWS Settings (optional)
+AWS_ACCESS_KEY_ID=your-aws-access-key
+AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+AWS_STORAGE_BUCKET_NAME=your-bucket-name
+AWS_REGION=us-east-1
+

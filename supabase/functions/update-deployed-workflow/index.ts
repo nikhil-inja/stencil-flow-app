@@ -35,23 +35,23 @@ serve(async (req) => {
       .from('deployments')
       .select(`
         n8n_workflow_id,
-        blueprint_id, 
-        blueprints ( name, workflow_json ),
+        automation_id, 
+        automations ( name, workflow_json ),
         clients ( n8n_instances (instance_url, api_key) )
       `)
       .eq('id', deploymentId)
       .single();
 
-    const { n8n_workflow_id, blueprints: blueprint, clients: client } = deploymentDetails as any;
+    const { n8n_workflow_id, automations: automation, clients: client } = deploymentDetails as any;
     const n8n_instance = client?.n8n_instances;
-    if (!blueprint || !n8n_instance) throw new Error("Could not retrieve blueprint or n8n instance details.");
+    if (!automation || !n8n_instance) throw new Error("Could not retrieve automation or n8n instance details.");
 
     // 3. Sanitize the workflow JSON
     const workflowToUpdate = {
-        name: blueprint.name,
-        nodes: (blueprint.workflow_json as any).nodes,
-        connections: (blueprint.workflow_json as any).connections || {},
-        settings: (blueprint.workflow_json as any).settings || {},
+        name: automation.name,
+        nodes: (automation.workflow_json as any).nodes,
+        connections: (automation.workflow_json as any).connections || {},
+        settings: (automation.workflow_json as any).settings || {},
     };
 
     // 4. Make the PUT request to update the workflow
@@ -90,11 +90,11 @@ serve(async (req) => {
     // This part is likely unnecessary now, as the Git repo is the source of truth,
     // but we'll leave it for now.
     await supabaseAdmin
-      .from('blueprints')
-      .update({ workflow_json: blueprint.workflow_json })
-      .eq('id', deploymentDetails?.blueprint_id);
+      .from('automations')
+      .update({ workflow_json: automation.workflow_json })
+      .eq('id', deploymentDetails?.automation_id);
 
-    return new Response(JSON.stringify({ message: `Successfully updated '${blueprint.name}'!` }), {
+    return new Response(JSON.stringify({ message: `Successfully updated '${automation.name}'!` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
