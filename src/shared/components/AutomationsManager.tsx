@@ -66,18 +66,16 @@ export default function AutomationsManager() {
             return;
           }
 
-          const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/automations/${automationId}/`, {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${sessionData.session.access_token}`,
-            },
+          let error: any;
+          await apiClient.from('automations').delete().eq('id', automationId).then((resolve) => {
+            error = resolve.error;
           });
 
-          if (response.ok) {
+          if (error) {
+            throw new Error(error?.message || 'Failed to delete automation');
+          } else {
             setAutomations(automations.filter((auto) => auto.id !== automationId));
             toast.success('Automation deleted.');
-          } else {
-            throw new Error('Failed to delete automation');
           }
         } catch (error: any) {
           console.error('Error deleting automation:', error);
@@ -101,29 +99,22 @@ export default function AutomationsManager() {
         return;
       }
 
-      const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/functions/create-automation/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionData.session.access_token}`,
-        },
-        body: JSON.stringify({
+      const { data: newAutomation, error } = await apiClient.functions.invoke('create-automation', {
+        body: {
           name,
           description,
           workflow_json: workflowJson,
-        }),
+        }
       });
 
-      if (response.ok) {
-        const newAutomation = await response.json();
+      if (error) {
+        throw new Error(error.message || 'Failed to create automation');
+      } else {
         setAutomations([newAutomation, ...automations]);
         setName('');
         setDescription('');
         setWorkflowJson('');
         toast.success('Automation and GitHub repo created!');
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create automation');
       }
   
     } catch (error: any) {

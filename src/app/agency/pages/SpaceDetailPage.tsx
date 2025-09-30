@@ -101,28 +101,23 @@ export default function SpaceDetailPage() {
         };
 
         // Fetch space details
-        const spaceResponse = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/spaces/${spaceId}/`, {
-            method: 'GET',
-            headers,
-        });
+        const { data: spaceData, error: spaceError } = await apiClient.from('spaces').select().eq('id', spaceId).single();
 
-        if (spaceResponse.ok) {
-            const spaceData = await spaceResponse.json();
+        if (spaceError) {
+            console.error('❌ Failed to load space:', spaceError);
+            toast.error("Failed to load space details");
+        } else {
             console.log('✅ Space data loaded:', spaceData);
             setSpace(spaceData);
-        } else {
-            console.error('❌ Failed to load space:', spaceResponse.status, await spaceResponse.text());
-            toast.error("Failed to load space details");
         }
 
         // Fetch n8n instances for this space
-        const instanceResponse = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/n8n-instances/?space_id=${spaceId}`, {
-            method: 'GET',
-            headers,
+        let instancesData: any;
+        await apiClient.from('n8n-instances').select().eq('space_id', spaceId).then((resolve) => {
+            instancesData = resolve.data;
         });
-
-        if (instanceResponse.ok) {
-            const instancesData = await instanceResponse.json();
+        
+        if (instancesData) {
             const instances = instancesData.results || instancesData || [];
             const instanceData = instances[0]; // Get first instance for this space
             setInstance(instanceData);
@@ -134,27 +129,26 @@ export default function SpaceDetailPage() {
         }
 
         // Fetch automations for the workspace
-        const automationResponse = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/automations/`, {
-            method: 'GET',
-            headers,
+        let automationData: any, automationError: any;
+        await apiClient.from('automations').select().then((resolve) => {
+            automationData = resolve.data;
+            automationError = resolve.error;
         });
 
-        if (automationResponse.ok) {
-            const automationData = await automationResponse.json();
-            const automations = automationData.results || automationData || [];
-            setAutomations(automations);
-        } else {
+        if (automationError) {
             toast.error("Failed to fetch automations");
+        } else {
+            const automations = automationData?.results || automationData || [];
+            setAutomations(automations);
         }
 
         // Fetch deployments for this space
-        const deploymentsResponse = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/deployments/space/${spaceId}/`, {
-            method: 'GET',
-            headers,
+        let deploymentsData: any;
+        await apiClient.from('deployments').select().eq('space_id', spaceId).then((resolve) => {
+            deploymentsData = resolve.data;
         });
 
-        if (deploymentsResponse.ok) {
-            const deploymentsData = await deploymentsResponse.json();
+        if (deploymentsData) {
             const deployments = deploymentsData.results || deploymentsData || [];
             setDeployments(deployments);
         } else {
@@ -197,27 +191,22 @@ export default function SpaceDetailPage() {
         return;
       }
 
-      const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/n8n-instances/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionData.session.access_token}`,
-        },
-        body: JSON.stringify({
-          space_id: spaceId,
-          instance_url: instanceUrl,
-          api_key: apiKey,
-          workspace_id: profile.workspace.id,
-        }),
+      let error: any;
+      await apiClient.from('n8n-instances').insert({
+        space_id: spaceId,
+        instance_url: instanceUrl,
+        api_key: apiKey,
+        workspace_id: profile.workspace.id,
+      }).then((resolve) => {
+        error = resolve.error;
       });
 
-      if (response.ok) {
+      if (error) {
+        throw new Error(error.message || 'Failed to save instance');
+      } else {
         toast.success('n8n instance details saved!');
         clearPersistedFormData();
         fetchAllData();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to save instance');
       }
     } catch (error: any) {
       toast.error('Error saving instance: ' + error.message);
@@ -237,21 +226,19 @@ export default function SpaceDetailPage() {
           return;
         }
 
-        const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/n8n-instances/${instance.id}/`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${sessionData.session.access_token}`,
-          },
+        let error: any;
+        await apiClient.from('n8n-instances').delete().eq('id', instance.id).then((resolve) => {
+          error = resolve.error;
         });
 
-        if (response.ok) {
+        if (error) {
+          throw new Error(error.message || 'Failed to delete instance');
+        } else {
           setInstance(null);
           setInstanceUrl('');
           setApiKey('');
           clearPersistedFormData();
           toast.success('Connection deleted.');
-        } else {
-          throw new Error('Failed to delete instance');
         }
       } catch (error: any) {
         toast.error('Error deleting instance: ' + error.message);

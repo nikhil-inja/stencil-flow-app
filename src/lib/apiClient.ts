@@ -337,8 +337,11 @@ class ApiClient {
       });
     },
 
-    // Workflow Flowchart API (placeholder for future implementation)
-    getWorkflowFlowchart: async (params: { workflow_id: string }): Promise<ApiResponse<any>> => {
+    // Enhanced Workflow Flowchart API
+    getWorkflowFlowchart: async (params: { 
+      workflow_id: string; 
+      include_execution_data?: boolean 
+    }): Promise<ApiResponse<any>> => {
       return await this.request('/functions/get-workflow-flowchart/', {
         method: 'POST',
         body: JSON.stringify(params),
