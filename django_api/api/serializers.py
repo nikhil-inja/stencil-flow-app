@@ -247,12 +247,79 @@ class DailyTokenUsageSerializer(serializers.Serializer):
     cost = serializers.FloatField()
 
 
+class ProviderBreakdownSerializer(serializers.Serializer):
+    """Serializer for provider breakdown data"""
+    tokens = serializers.IntegerField()
+    cost = serializers.FloatField()
+    executions = serializers.IntegerField(default=0)
+
+
+class ModelBreakdownSerializer(serializers.Serializer):
+    """Serializer for model breakdown data"""
+    tokens = serializers.IntegerField()
+    cost = serializers.FloatField()
+    executions = serializers.IntegerField(default=0)
+    provider = serializers.CharField()
+
+
+class NodeBreakdownSerializer(serializers.Serializer):
+    """Serializer for node breakdown data"""
+    node_name = serializers.CharField()
+    node_type = serializers.CharField(required=False)
+    tokens = serializers.IntegerField()
+    cost = serializers.FloatField()
+    model = serializers.CharField(required=False)
+    provider = serializers.CharField(required=False)
+    executions = serializers.IntegerField(default=0)
+
+
 class AITokenUsageResponseSerializer(serializers.Serializer):
-    """Serializer for AI token usage response"""
+    """Enhanced serializer for AI token usage response with provider breakdowns"""
     workflow_id = serializers.CharField()
     total_tokens_used = serializers.IntegerField()
     total_cost = serializers.FloatField()
+    
+    # Enhanced breakdowns
+    provider_breakdown = serializers.DictField(
+        child=ProviderBreakdownSerializer(),
+        help_text="Token usage breakdown by AI provider (openai, anthropic, groq, etc.)",
+        required=False
+    )
+    model_breakdown = serializers.DictField(
+        child=ModelBreakdownSerializer(), 
+        help_text="Token usage breakdown by specific model",
+        required=False
+    )
+    node_breakdown = NodeBreakdownSerializer(
+        many=True,
+        help_text="Token usage breakdown by workflow node",
+        required=False
+    )
+    
+    # Existing fields
     daily_token_usage = DailyTokenUsageSerializer(many=True)
     period_start = serializers.DateField()
     period_end = serializers.DateField()
-    ai_nodes_found = serializers.ListField(child=serializers.CharField(), help_text="List of AI node types found in the workflow")
+    ai_nodes_found = serializers.ListField(
+        child=serializers.CharField(), 
+        help_text="List of AI node types found in the workflow"
+    )
+    
+    # New metadata fields
+    discovered_models = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Models detected in workflow executions",
+        required=False
+    )
+    provider_usage_summary = serializers.DictField(
+        help_text="Summary statistics by provider",
+        required=False
+    )
+    total_executions_analyzed = serializers.IntegerField(
+        help_text="Total number of executions analyzed",
+        required=False
+    )
+    analysis_method = serializers.CharField(
+        help_text="Method used for analysis (mcp_enhanced, legacy, etc.)",
+        default="mcp_enhanced"
+    )

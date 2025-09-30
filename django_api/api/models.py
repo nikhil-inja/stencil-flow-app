@@ -194,3 +194,47 @@ class GitHubToken(models.Model):
 
     def __str__(self):
         return f"GitHub Token for {self.user.email}"
+
+
+class AINodeType(models.Model):
+    """Model to store discovered AI node types and their configurations from n8n-mcp"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    node_type = models.CharField(max_length=255, unique=True, help_text="n8n node type identifier")
+    workflow_node_type = models.CharField(max_length=255, help_text="Full node type used in workflows")
+    display_name = models.CharField(max_length=255)
+    description = models.TextField()
+    package = models.CharField(max_length=100, help_text="n8n package name")
+    category = models.CharField(max_length=50)
+    
+    # AI-specific metadata
+    supports_tokens = models.BooleanField(default=True, help_text="Whether this node type reports token usage")
+    provider = models.CharField(max_length=50, help_text="AI provider (openai, anthropic, groq, etc.)")
+    token_extraction_method = models.CharField(
+        max_length=50, 
+        default='usage',
+        help_text="Method to extract tokens (usage, tokenUsage, etc.)"
+    )
+    
+    # Model configuration patterns
+    model_path = models.CharField(
+        max_length=255, 
+        null=True, 
+        blank=True,
+        help_text="JSON path to model field in node parameters"
+    )
+    typical_models = models.JSONField(
+        default=list, 
+        help_text="Common models used with this node type"
+    )
+    
+    # Discovery metadata
+    discovered_at = models.DateTimeField(auto_now_add=True)
+    last_updated = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True, help_text="Whether to include in token analysis")
+    
+    class Meta:
+        db_table = 'api_ai_node_type'
+        ordering = ['provider', 'display_name']
+        
+    def __str__(self):
+        return f"{self.display_name} ({self.provider})"

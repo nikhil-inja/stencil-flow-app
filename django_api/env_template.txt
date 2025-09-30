@@ -1,39 +1,113 @@
-# Django Settings
-SECRET_KEY=your-secret-key-here
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
+# =============================================================================
+# DJANGO API - ENVIRONMENT CONFIGURATION
+# =============================================================================
+# Backend-specific environment variables for the Django API
+# Copy this file to .env in the django_api directory
 
-# Database
+# =============================================================================
+# DJANGO CORE SETTINGS
+# =============================================================================
+
+# Django Secret Key (CHANGE IN PRODUCTION!)
+SECRET_KEY=your-super-secret-django-key-change-this-in-production
+
+# Debug Mode (False in production)
+DEBUG=True
+
+# Allowed Hosts (comma-separated)
+ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+
+# PostgreSQL Database Settings
 DB_NAME=stencil_flow
 DB_USER=postgres
-DB_PASSWORD=your-password
+DB_PASSWORD=your-database-password
 DB_HOST=localhost
 DB_PORT=5432
 
-# JWT Settings
-JWT_SECRET_KEY=your-jwt-secret-key
+# =============================================================================
+# AUTHENTICATION & SECURITY
+# =============================================================================
 
-# CORS Settings
+# JWT Secret Key (should be different from Django SECRET_KEY)
+JWT_SECRET_KEY=your-jwt-secret-key-change-this-in-production
+
+# =============================================================================
+# CORS CONFIGURATION
+# =============================================================================
+
+# Allowed Origins (comma-separated)
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000
+
+# Allow All Origins (True for development, False for production)
 CORS_ALLOW_ALL_ORIGINS=True
 
-# Site URL (frontend for OAuth redirects)
+# =============================================================================
+# APPLICATION URLS
+# =============================================================================
+
+# Frontend URL (for OAuth redirects)
 SITE_URL=http://localhost:3000
 
-# Server URL (backend for GitHub OAuth callbacks)
+# Backend URL (for GitHub OAuth callbacks)
 SERVER_URL=http://localhost:8000
 
-# GitHub OAuth Settings
-GITHUB_CLIENT_ID=your-github-client-id
-GITHUB_CLIENT_SECRET=your-github-client-secret
+# =============================================================================
+# GITHUB OAUTH
+# =============================================================================
+
+# GitHub OAuth App Credentials
+GITHUB_CLIENT_ID=your-github-oauth-client-id
+GITHUB_CLIENT_SECRET=your-github-oauth-client-secret
 GITHUB_CALLBACK_URL=http://localhost:8000/api/auth/github/callback/
 
-# N8N Settings
-DEFAULT_N8N_INSTANCE_URL=your-n8n-instance-url
+# =============================================================================
+# N8N INTEGRATION
+# =============================================================================
+
+# Default N8N Instance Configuration
+DEFAULT_N8N_INSTANCE_URL=https://your-n8n-instance.com
 DEFAULT_N8N_API_KEY=your-n8n-api-key
 
-# AWS Settings (optional)
-AWS_ACCESS_KEY_ID=your-aws-access-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret-key
-AWS_STORAGE_BUCKET_NAME=your-bucket-name
+# =============================================================================
+# AI SERVICES
+# =============================================================================
+
+# OpenAI API Key (for Mermaid chart generation)
+OPENAI_API_KEY=sk-your-openai-api-key-here
+
+# =============================================================================
+# AWS CONFIGURATION (Optional)
+# =============================================================================
+
+# AWS S3 for File Storage
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_STORAGE_BUCKET_NAME=your-s3-bucket-name
 AWS_REGION=us-east-1
+
+# =============================================================================
+# SETUP INSTRUCTIONS
+# =============================================================================
+#
+# 1. Copy this file to .env in the django_api directory:
+#    cp env_template.txt .env
+#
+# 2. Fill in your actual values for each variable
+#
+# 3. Create PostgreSQL database:
+#    createdb stencil_flow
+#
+# 4. Run Django migrations:
+#    python manage.py migrate
+#
+# 5. Create superuser:
+#    python manage.py createsuperuser
+#
+# 6. Start development server:
+#    python manage.py runserver
+#
+# =============================================================================

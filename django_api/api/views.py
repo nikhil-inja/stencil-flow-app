@@ -2332,38 +2332,18 @@ def get_execution_analytics(request):
 @permission_classes([IsAuthenticated])
 def get_ai_token_usage(request):
     """
-    Get AI token usage analytics for a specific workflow from n8n
-    Returns token consumption and cost data for the past 7 days
+    Enhanced AI token usage analytics with n8n-mcp integration
+    Returns detailed token consumption and cost data with provider breakdowns
     """
+    import logging
     from collections import defaultdict
     from datetime import datetime, timedelta
     from .serializers import AITokenUsageRequestSerializer, AITokenUsageResponseSerializer
+    from .services.node_discovery_service import NodeDiscoveryService
+    from .services.token_extraction_service import TokenExtractionService
+    from .models import AINodeType
     
-    # Token pricing per 1K tokens (as of 2024)
-    TOKEN_PRICING = {
-        'gpt-3.5-turbo': {'input': 0.0005, 'output': 0.0015},  # per 1K tokens
-        'gpt-4': {'input': 0.03, 'output': 0.06},
-        'gpt-4-turbo': {'input': 0.01, 'output': 0.03},
-        'claude-3-haiku': {'input': 0.00025, 'output': 0.00125},
-        'claude-3-sonnet': {'input': 0.003, 'output': 0.015},
-        'claude-3-opus': {'input': 0.015, 'output': 0.075},
-        'groq/llama3-8b': {'input': 0.0001, 'output': 0.0001},
-        'groq/llama3-70b': {'input': 0.0006, 'output': 0.0008},
-        'groq/mixtral-8x7b': {'input': 0.00027, 'output': 0.00027},
-        'groq/compound': {'input': 0.0001, 'output': 0.0001},
-        'meta-llama/llama-guard-4-12b': {'input': 0.0001, 'output': 0.0001},
-    }
-    
-    # AI node types that consume tokens
-    AI_NODE_TYPES = [
-        '@n8n/n8n-nodes-langchain.openAi',
-        '@n8n/n8n-nodes-langchain.agent',
-        '@n8n/n8n-nodes-langchain.lmChatGroq',
-        '@n8n/n8n-nodes-langchain.lmChatAnthropic',
-        '@n8n/n8n-nodes-langchain.lmChatOpenAi',
-        '@n8n/n8n-nodes-langchain.lmChatCohere',
-        '@n8n/n8n-nodes-langchain.lmChatHuggingFace',
-    ]
+    logger = logging.getLogger(__name__)
     
     # Validate request data
     serializer = AITokenUsageRequestSerializer(data=request.data)
@@ -2402,6 +2382,32 @@ def get_ai_token_usage(request):
                 return Response({
                     'error': 'No n8n instance configured for this space or workspace'
                 }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get or discover AI node types
+        ai_node_types = list(AINodeType.objects.filter(is_active=True))
+        
+        # If no AI nodes discovered, try to discover them
+        if not ai_node_types:
+            logger.info(f"No AI nodes found in database, running discovery for workflow {workflow_id}")
+            discovery_service = NodeDiscoveryService()
+            discovery_result = discovery_service.discover_and_store_ai_nodes()
+            
+            if discovery_result['success']:
+                ai_node_types = list(AINodeType.objects.filter(is_active=True))
+                logger.info(f"Discovered {len(ai_node_types)} AI node types")
+            else:
+                logger.warning(f"Node discovery failed: {discovery_result.get('message', 'Unknown error')}")
+        
+        # Initialize enhanced services  
+        # Ensure we have the latest AI node types after potential discovery
+        ai_node_types = list(AINodeType.objects.filter(is_active=True))
+        token_service = TokenExtractionService(ai_node_types)
+        
+        # Create dynamic AI_NODE_TYPES list for backward compatibility
+        AI_NODE_TYPES = [node.workflow_node_type for node in ai_node_types]
+        
+        # Get enhanced pricing
+        TOKEN_PRICING = token_service.get_enhanced_pricing()
         
         # Calculate date range (past 7 days)
         end_date = timezone.now().date()
@@ -2475,17 +2481,29 @@ def get_ai_token_usage(request):
                 # Remove cursor from params for next iteration
                 if 'cursor' in params:
                     del params['cursor']
+                
+                # Safety break to prevent infinite loops
+                if page_count > 20:  # Max 20 pages = 5000 executions
+                    logger.warning(f"Reached maximum page limit for workflow {workflow_id}")
+                    break
             
             executions = all_executions
+            logger.info(f"Fetched {len(executions)} executions across {page_count} pages for workflow {workflow_id}")
             
         except requests.exceptions.RequestException as e:
             return Response({
                 'error': f'Failed to connect to n8n instance: {str(e)}'
             }, status=status.HTTP_502_BAD_GATEWAY)
         
-        # Process executions data to extract AI token usage
+        # Enhanced data tracking
         total_tokens_used = 0
         total_cost = 0.0
+        
+        # Enhanced breakdowns
+        provider_breakdown = defaultdict(lambda: {'tokens': 0, 'cost': 0.0, 'executions': 0})
+        model_breakdown = defaultdict(lambda: {'tokens': 0, 'cost': 0.0, 'executions': 0, 'provider': 'unknown'})
+        node_breakdown = []
+        discovered_models = set()
         
         # Daily stats dictionary: date -> {tokens, cost}
         daily_stats = defaultdict(lambda: {'tokens': 0, 'cost': 0.0})
@@ -2493,8 +2511,8 @@ def get_ai_token_usage(request):
         # Track AI nodes found in the workflow
         ai_nodes_found = set()
         
-        def extract_tokens_from_run_data(run_data, execution_date):
-            """Extract token usage from runData for a specific execution"""
+        def extract_tokens_from_run_data_enhanced(run_data, execution_date):
+            """Enhanced token extraction using provider-specific logic"""
             nonlocal total_tokens_used, total_cost
             
             if not run_data:
@@ -2503,6 +2521,12 @@ def get_ai_token_usage(request):
             for node_name, node_executions in run_data.items():
                 if not isinstance(node_executions, list):
                     continue
+                
+                node_tokens = 0
+                node_cost = 0.0
+                node_model = 'unknown'
+                node_provider = 'unknown'
+                node_type = None
                 
                 for execution in node_executions:
                     if not isinstance(execution, dict):
@@ -2513,68 +2537,94 @@ def get_ai_token_usage(request):
                     if execution_status != 'success':
                         continue
                     
-                    # Look for token usage in the execution data
+                    # Look for execution data
                     execution_data = execution.get('data', {})
                     if not execution_data:
                         continue
                     
-                    # Check for token usage in various possible locations
-                    token_info = None
+                    # Use realistic token extraction (handles missing token data)
+                    from .services.realistic_token_service import RealisticTokenService
+                    realistic_service = RealisticTokenService()
+                    token_estimate = realistic_service.extract_tokens_realistic(execution_data, node_name)
                     
-                    # Method 1: Direct token usage in execution data
-                    if 'usage' in execution_data:
-                        token_info = execution_data['usage']
-                    elif 'tokenUsage' in execution_data:
-                        token_info = execution_data['tokenUsage']
-                    elif 'tokens' in execution_data:
-                        token_info = execution_data['tokens']
-                    
-                    # Method 2: Look in nested data structures
-                    if not token_info:
-                        for key, value in execution_data.items():
-                            if isinstance(value, dict):
-                                if 'usage' in value:
-                                    token_info = value['usage']
-                                    break
-                                elif 'tokenUsage' in value:
-                                    token_info = value['tokenUsage']
-                                    break
-                    
-                    # Method 3: Look for LLM response data
-                    if not token_info:
-                        # Check if this looks like an LLM response
-                        if 'choices' in execution_data or 'completion' in execution_data:
-                            # Try to estimate tokens from response length
-                            response_text = str(execution_data.get('completion', ''))
-                            if response_text:
-                                # Rough estimation: 1 token ≈ 4 characters
-                                estimated_tokens = len(response_text) // 4
-                                token_info = {
-                                    'prompt_tokens': estimated_tokens // 2,
-                                    'completion_tokens': estimated_tokens // 2,
-                                    'total_tokens': estimated_tokens
-                                }
+                    if token_estimate:
+                        token_info = {
+                            'prompt_tokens': token_estimate.prompt_tokens,
+                            'completion_tokens': token_estimate.completion_tokens,
+                            'total_tokens': token_estimate.total_tokens,
+                            'confidence': token_estimate.confidence,
+                            'method': token_estimate.method
+                        }
+                    else:
+                        # Fallback to enhanced extraction
+                        token_info = token_service.extract_tokens_by_provider(
+                            execution_data, node_name
+                        )
                     
                     if token_info:
-                        # Extract token counts
-                        prompt_tokens = token_info.get('prompt_tokens', 0) or token_info.get('input_tokens', 0)
-                        completion_tokens = token_info.get('completion_tokens', 0) or token_info.get('output_tokens', 0)
-                        total_tokens = token_info.get('total_tokens', 0) or (prompt_tokens + completion_tokens)
+                        # Detect model used
+                        model_name = token_service.detect_model_from_execution(
+                            execution_data, node_name
+                        )
                         
-                        if total_tokens > 0:
-                            # Calculate cost based on model (we'll need to infer from node type)
-                            model_name = 'gpt-3.5-turbo'  # Default fallback
-                            cost_per_1k_input = TOKEN_PRICING.get(model_name, {}).get('input', 0.001)
-                            cost_per_1k_output = TOKEN_PRICING.get(model_name, {}).get('output', 0.002)
-                            
-                            cost = (prompt_tokens / 1000 * cost_per_1k_input) + (completion_tokens / 1000 * cost_per_1k_output)
-                            
-                            total_tokens_used += total_tokens
+                        if model_name != 'unknown':
+                            discovered_models.add(model_name)
+                            node_model = model_name
+                        
+                        # Find node type for provider detection
+                        node_type_obj = None
+                        for ai_node in ai_node_types:
+                            if (node_name.lower() in ai_node.display_name.lower() or
+                                ai_node.display_name.lower() in node_name.lower()):
+                                node_type_obj = ai_node
+                                node_type = ai_node.workflow_node_type
+                                node_provider = ai_node.provider
+                                ai_nodes_found.add(ai_node.workflow_node_type)
+                                break
+                        
+                        # Calculate cost with enhanced pricing
+                        cost = token_service.calculate_cost(
+                            token_info, model_name, node_provider
+                        )
+                        
+                        tokens = token_info.get('total_tokens', 0)
+                        
+                        if tokens > 0:
+                            # Update totals
+                            total_tokens_used += tokens
                             total_cost += cost
-                            daily_stats[execution_date]['tokens'] += total_tokens
+                            daily_stats[execution_date]['tokens'] += tokens
                             daily_stats[execution_date]['cost'] += cost
+                            
+                            # Update node tracking
+                            node_tokens += tokens
+                            node_cost += cost
+                            
+                            # Update provider breakdown
+                            provider_breakdown[node_provider]['tokens'] += tokens
+                            provider_breakdown[node_provider]['cost'] += cost
+                            provider_breakdown[node_provider]['executions'] += 1
+                            
+                            # Update model breakdown
+                            model_breakdown[model_name]['tokens'] += tokens
+                            model_breakdown[model_name]['cost'] += cost
+                            model_breakdown[model_name]['executions'] += 1
+                            model_breakdown[model_name]['provider'] = node_provider
+                
+                # Add node breakdown if it had tokens
+                if node_tokens > 0:
+                    node_breakdown.append({
+                        'node_name': node_name,
+                        'node_type': node_type or 'unknown',  # Ensure node_type is never None
+                        'tokens': node_tokens,
+                        'cost': round(node_cost, 4),
+                        'model': node_model,
+                        'provider': node_provider,
+                        'executions': 1
+                    })
         
         # Process each execution
+        total_executions_analyzed = 0
         for execution in executions:
             # Parse execution date
             started_at = execution.get('startedAt')
@@ -2590,12 +2640,14 @@ def get_ai_token_usage(request):
             if execution_date < start_date or execution_date > end_date:
                 continue
             
+            total_executions_analyzed += 1
+            
             # Extract token usage from runData
             execution_data = execution.get('data', {})
             if execution_data:
                 result_data = execution_data.get('resultData', {})
                 run_data = result_data.get('runData', {})
-                extract_tokens_from_run_data(run_data, execution_date)
+                extract_tokens_from_run_data_enhanced(run_data, execution_date)
         
         # Build daily stats array
         daily_stats_array = []
@@ -2614,7 +2666,34 @@ def get_ai_token_usage(request):
             
             current_date += timedelta(days=1)
         
-        # Prepare response data
+        # Convert defaultdict to regular dict for serialization
+        provider_breakdown_dict = {}
+        for provider, stats in provider_breakdown.items():
+            provider_breakdown_dict[provider] = {
+                'tokens': stats['tokens'],
+                'cost': round(stats['cost'], 4),
+                'executions': stats['executions']
+            }
+        
+        model_breakdown_dict = {}
+        for model, stats in model_breakdown.items():
+            model_breakdown_dict[model] = {
+                'tokens': stats['tokens'],
+                'cost': round(stats['cost'], 4),
+                'executions': stats['executions'],
+                'provider': stats['provider']
+            }
+        
+        # Create provider usage summary
+        provider_usage_summary = {
+            'total_providers': len(provider_breakdown_dict),
+            'most_used_provider': max(provider_breakdown_dict.keys(), 
+                                     key=lambda x: provider_breakdown_dict[x]['tokens']) if provider_breakdown_dict else 'none',
+            'cost_leader': max(provider_breakdown_dict.keys(), 
+                              key=lambda x: provider_breakdown_dict[x]['cost']) if provider_breakdown_dict else 'none'
+        }
+        
+        # Prepare enhanced response data
         response_data = {
             'workflow_id': workflow_id,
             'total_tokens_used': total_tokens_used,
@@ -2622,20 +2701,84 @@ def get_ai_token_usage(request):
             'daily_token_usage': daily_stats_array,
             'period_start': start_date,
             'period_end': end_date,
-            'ai_nodes_found': list(ai_nodes_found)
+            'ai_nodes_found': list(ai_nodes_found),
+            
+            # Enhanced fields
+            'provider_breakdown': provider_breakdown_dict,
+            'model_breakdown': model_breakdown_dict,
+            'node_breakdown': node_breakdown,
+            'discovered_models': list(discovered_models),
+            'provider_usage_summary': provider_usage_summary,
+            'total_executions_analyzed': total_executions_analyzed,
+            'analysis_method': 'mcp_enhanced'
         }
         
-        # Validate response with serializer
+        # Validate response with enhanced serializer
         response_serializer = AITokenUsageResponseSerializer(data=response_data)
         if response_serializer.is_valid():
             return Response(response_serializer.validated_data)
         else:
+            logger.error(f"Response serialization failed: {response_serializer.errors}")
             return Response(response_serializer.errors, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
     except Exception as e:
+        logger.error(f"Error in enhanced AI token usage analysis: {str(e)}")
         return Response({
             'error': f'Internal server error: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Old AI token usage function removed - functionality integrated into enhanced get_ai_token_usage
+
+
+def generate_mermaid_flowchart(workflow_data):
+    """
+    Generate a Mermaid flowchart from n8n workflow data
+    """
+    nodes = workflow_data.get('nodes', [])
+    connections = workflow_data.get('connections', {})
+    
+    if not nodes:
+        return "graph TD\n    A[Empty Workflow]"
+    
+    # Start building the Mermaid diagram
+    mermaid_lines = ["graph TD"]
+    
+    # Add nodes with their types and labels
+    node_mapping = {}
+    for i, node in enumerate(nodes):
+        node_id = node.get('id', f'node_{i}')
+        node_name = node.get('name', f'Node {i}')
+        node_type = node.get('type', 'unknown')
+        
+        # Create a safe node identifier for Mermaid
+        safe_id = f"node_{i}"
+        node_mapping[node_id] = safe_id
+        
+        # Determine node styling based on type
+        if 'trigger' in node_type.lower() or 'webhook' in node_type.lower():
+            node_style = f"{safe_id}[{node_name}]"
+        elif 'ai' in node_type.lower() or 'openai' in node_type.lower() or 'claude' in node_type.lower():
+            node_style = f"{safe_id}(({node_name}))"
+        elif 'condition' in node_type.lower() or 'if' in node_type.lower():
+            node_style = f"{safe_id}{{{node_name}}}"
+        else:
+            node_style = f"{safe_id}[{node_name}]"
+        
+        mermaid_lines.append(f"    {node_style}")
+    
+    # Add connections
+    for source_id, targets in connections.items():
+        if source_id in node_mapping:
+            source_mermaid_id = node_mapping[source_id]
+            
+            for target_data in targets:
+                target_id = target_data.get('node')
+                if target_id in node_mapping:
+                    target_mermaid_id = node_mapping[target_id]
+                    mermaid_lines.append(f"    {source_mermaid_id} --> {target_mermaid_id}")
+    
+    return "\n".join(mermaid_lines)
 
 
 @api_view(['POST'])
@@ -2664,124 +2807,83 @@ def get_workflow_flowchart(request):
         user_profile = request.user.profile
         workspace = user_profile.workspace
         
-        # Find the deployment for this workflow
+        # Find the deployment for this workflow_id to get the space
         try:
-            deployment = Deployment.objects.get(n8n_workflow_id=workflow_id)
-            automation = deployment.automation
+            deployment = Deployment.objects.select_related('space').get(
+                n8n_workflow_id=workflow_id,
+                automation__workspace=workspace
+            )
+            space = deployment.space
         except Deployment.DoesNotExist:
             return Response({
-                'error': f'Workflow {workflow_id} not found in deployments'
+                'error': f'No deployment found for workflow {workflow_id}'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Get the n8n instance for this workflow's space
-        # IMPORTANT: We must use the space-specific instance because the workflow_id
-        # is specific to that instance and won't exist in the master instance
+        # Get n8n instance for this space (space-specific or fallback to master)
+        instance = None
         try:
-            n8n_instance = N8nInstance.objects.get(space=deployment.space)
+            # Try space-specific instance first
+            instance = N8nInstance.objects.get(space=space)
         except N8nInstance.DoesNotExist:
-            return Response({
-                'error': f'No n8n instance configured for space "{deployment.space.name}". Please configure the n8n instance for this space.',
-                'details': {
-                    'space_id': str(deployment.space.id),
-                    'space_name': deployment.space.name,
-                    'workflow_id': workflow_id
-                }
-            }, status=status.HTTP_404_NOT_FOUND)
+            # Fall back to workspace master instance
+            try:
+                instance = N8nInstance.objects.get(workspace=workspace, space__isnull=True)
+            except N8nInstance.DoesNotExist:
+                return Response({
+                    'error': 'No n8n instance configured for this space or workspace'
+                }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Fetch workflow data from n8n
-        # Ensure proper URL construction (remove trailing slash from instance_url)
-        base_url = n8n_instance.instance_url.rstrip('/')
-        workflow_url = f"{base_url}/api/v1/workflows/{workflow_id}"
-        headers = {
-            'X-N8N-API-KEY': n8n_instance.api_key,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        }
-        
-        # Debug logging
-        print(f"🔍 Debug - n8n_instance.instance_url: {n8n_instance.instance_url}")
-        print(f"🔍 Debug - base_url: {base_url}")
-        print(f"🔍 Debug - workflow_url: {workflow_url}")
-        print(f"🔍 Debug - api_key: {n8n_instance.api_key[:10]}...")
+        # Fetch workflow details from n8n
+        n8n_url = instance.instance_url.rstrip('/')
+        workflow_url = f"{n8n_url}/api/v1/workflows/{workflow_id}"
         
         try:
-            workflow_response = requests.get(workflow_url, headers=headers, timeout=30)
+            n8n_response = requests.get(
+                workflow_url,
+                headers={'X-N8N-API-KEY': instance.api_key},
+                timeout=30
+            )
             
-            if workflow_response.status_code == 404:
+            if n8n_response.status_code == 401:
                 return Response({
-                    'error': f'Workflow {workflow_id} not found in n8n instance'
+                    'error': 'Invalid n8n API key'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            if n8n_response.status_code == 404:
+                return Response({
+                    'error': f'Workflow {workflow_id} not found'
                 }, status=status.HTTP_404_NOT_FOUND)
             
-            if not workflow_response.ok:
+            if not n8n_response.ok:
                 return Response({
-                    'error': f'n8n API error: {workflow_response.text}',
-                    'details': {
-                        'status_code': workflow_response.status_code,
-                        'url': workflow_url,
-                        'response_text': workflow_response.text[:500]  # First 500 chars
-                    }
+                    'error': f'n8n API error: {n8n_response.text}'
                 }, status=status.HTTP_502_BAD_GATEWAY)
             
-            # Check if response is empty or not JSON
-            response_text = workflow_response.text.strip()
-            if not response_text:
-                return Response({
-                    'error': 'n8n API returned empty response',
-                    'details': {
-                        'status_code': workflow_response.status_code,
-                        'url': workflow_url,
-                        'headers': dict(workflow_response.headers)
-                    }
-                }, status=status.HTTP_502_BAD_GATEWAY)
-            
-            try:
-                workflow_data = workflow_response.json()
-            except ValueError as json_error:
-                return Response({
-                    'error': f'n8n API returned invalid JSON: {str(json_error)}',
-                    'details': {
-                        'status_code': workflow_response.status_code,
-                        'url': workflow_url,
-                        'response_text': response_text[:500],
-                        'content_type': workflow_response.headers.get('content-type', 'unknown')
-                    }
-                }, status=status.HTTP_502_BAD_GATEWAY)
+            workflow_data = n8n_response.json()
             
         except requests.exceptions.RequestException as e:
             return Response({
-                'error': f'Failed to connect to n8n instance: {str(e)}',
-                'details': {
-                    'url': workflow_url,
-                    'error_type': type(e).__name__
-                }
+                'error': f'Failed to connect to n8n instance: {str(e)}'
             }, status=status.HTTP_502_BAD_GATEWAY)
         
-        # Extract workflow information
-        workflow_name = workflow_data.get('name', automation.name)
-        nodes = workflow_data.get('nodes', [])
-        connections = workflow_data.get('connections', {})
-        
-        # Generate Mermaid diagram using LLM
-        mermaid_diagram = generate_mermaid_diagram_with_llm(
-            workflow_name, 
-            nodes, 
-            connections, 
-            include_execution_data
-        )
+        # Generate Mermaid diagram from workflow structure
+        mermaid_diagram = generate_mermaid_flowchart(workflow_data)
         
         # Count nodes and connections
+        nodes = workflow_data.get('nodes', [])
+        connections = workflow_data.get('connections', {})
         node_count = len(nodes)
-        connection_count = sum(len(conns) for conns in connections.values())
+        connection_count = sum(len(conn_list) for conn_list in connections.values())
         
         # Prepare response data
         response_data = {
             'workflow_id': workflow_id,
             'mermaid_diagram': mermaid_diagram,
-            'workflow_name': workflow_name,
+            'workflow_name': workflow_data.get('name', 'Untitled Workflow'),
             'node_count': node_count,
             'connection_count': connection_count,
-            'last_updated': datetime.now(),
-            'generation_method': 'llm_analysis'
+            'last_updated': workflow_data.get('updatedAt', datetime.now().isoformat()),
+            'generation_method': 'workflow_analysis'
         }
         
         # Validate response with serializer
@@ -2790,128 +2892,11 @@ def get_workflow_flowchart(request):
             return Response(response_serializer.validated_data)
         else:
             return Response(response_serializer.errors, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
+        
     except Exception as e:
         return Response({
             'error': f'Internal server error: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-def generate_mermaid_diagram_with_llm(workflow_name, nodes, connections, include_execution_data=False):
-    """
-    Generate a Mermaid diagram using LLM analysis of workflow structure
-    """
-    import openai
-    import re
-    from decouple import config
-    
-    # Get OpenAI API key from environment
-    openai_api_key = config('OPENAI_API_KEY', default='')
-    
-    if not openai_api_key:
-        # Fallback to template-based generation if no OpenAI key
-        return generate_template_mermaid_diagram(workflow_name, nodes, connections)
-    
-    try:
-        # Prepare workflow data for LLM analysis
-        workflow_summary = {
-            'name': workflow_name,
-            'nodes': [
-                {
-                    'id': node.get('id', ''),
-                    'name': node.get('name', ''),
-                    'type': node.get('type', ''),
-                    'parameters': node.get('parameters', {})
-                }
-                for node in nodes
-            ],
-            'connections': connections
-        }
-        
-        # Create prompt for LLM
-        prompt = f"""
-        Analyze this n8n workflow and generate a Mermaid flowchart diagram.
-        
-        Workflow Name: {workflow_name}
-        Nodes: {json.dumps(workflow_summary['nodes'], indent=2)}
-        Connections: {json.dumps(connections, indent=2)}
-        
-        Requirements:
-        1. Use Mermaid flowchart syntax (graph TD)
-        2. Create meaningful node labels based on node names and types
-        3. Show the flow from start to end
-        4. Use appropriate shapes for different node types:
-           - Rectangles for regular nodes
-           - Diamonds for decision nodes
-           - Circles for start/end nodes
-        5. Keep node labels concise but descriptive
-        6. Ensure all connections are properly represented
-        
-        Generate only the Mermaid diagram code, no explanations.
-        """
-        
-        # Call OpenAI API
-        client = openai.OpenAI(api_key=openai_api_key)
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an expert at creating Mermaid diagrams for workflow visualization. Generate clean, readable flowchart diagrams."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=1000,
-            temperature=0.3
-        )
-        
-        mermaid_code = response.choices[0].message.content.strip()
-        
-        # Clean up the response (remove markdown code blocks if present)
-        mermaid_code = re.sub(r'^```mermaid\s*\n', '', mermaid_code)
-        mermaid_code = re.sub(r'^```\s*\n', '', mermaid_code)
-        mermaid_code = re.sub(r'\n```$', '', mermaid_code)
-        
-        return mermaid_code
-        
-    except Exception as e:
-        # Fallback to template-based generation on LLM error
-        print(f"LLM generation failed: {e}")
-        return generate_template_mermaid_diagram(workflow_name, nodes, connections)
-
-
-def generate_template_mermaid_diagram(workflow_name, nodes, connections):
-    """
-    Generate a basic Mermaid diagram using template-based approach
-    """
-    import re
-    diagram_lines = ["graph TD"]
-    
-    # Add nodes
-    for node in nodes:
-        node_id = node.get('id', '')
-        node_name = node.get('name', 'Unknown')
-        node_type = node.get('type', '')
-        
-        # Clean node ID for Mermaid (remove special characters)
-        clean_id = re.sub(r'[^a-zA-Z0-9_]', '_', node_id)
-        
-        # Determine node shape based on type
-        if 'trigger' in node_type.lower() or 'webhook' in node_type.lower():
-            diagram_lines.append(f"    {clean_id}[\"🚀 {node_name}\"]")
-        elif 'condition' in node_type.lower() or 'if' in node_type.lower():
-            diagram_lines.append(f"    {clean_id}{{\"❓ {node_name}\"}}")
-        elif 'end' in node_type.lower() or 'stop' in node_type.lower():
-            diagram_lines.append(f"    {clean_id}[\"🏁 {node_name}\"]")
-        else:
-            diagram_lines.append(f"    {clean_id}[\"⚙️ {node_name}\"]")
-    
-    # Add connections
-    for source_id, targets in connections.items():
-        source_clean = re.sub(r'[^a-zA-Z0-9_]', '_', source_id)
-        
-        for target_info in targets:
-            target_id = target_info.get('node', '')
-            target_clean = re.sub(r'[^a-zA-Z0-9_]', '_', target_id)
-            
-            if source_clean and target_clean:
-                diagram_lines.append(f"    {source_clean} --> {target_clean}")
-    
-    return '\n'.join(diagram_lines)
+# End of views.py - no additional functions after this point
