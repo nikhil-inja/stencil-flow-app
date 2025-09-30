@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
+import mermaid from 'mermaid';
 
 // Import Shadcn Components
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
@@ -30,13 +31,61 @@ interface DailyExecutionStats {
   success_percentage: number;
 }
 
+// Enhanced AI Token Usage interfaces
 interface AITokenUsage {
   workflow_id: string;
   total_tokens_used: number;
   total_cost: number;
+  analysis_method: string;
+  
+  // Enhanced breakdowns
+  provider_breakdown: Record<string, ProviderBreakdown>;
+  model_breakdown: Record<string, ModelBreakdown>;
+  node_breakdown: NodeBreakdown[];
+  
+  // Existing fields
   daily_token_usage: DailyTokenUsage[];
   period_start: string;
   period_end: string;
+  ai_nodes_found: string[];
+  
+  // New metadata fields
+  discovered_models: string[];
+  provider_usage_summary: ProviderUsageSummary;
+  total_executions_analyzed: number;
+  
+  // Token estimation confidence
+  token_confidence?: 'exact' | 'estimated' | 'rough';
+  estimation_method?: string;
+}
+
+interface ProviderBreakdown {
+  tokens: number;
+  cost: number;
+  executions: number;
+}
+
+interface ModelBreakdown {
+  tokens: number;
+  cost: number;
+  executions: number;
+  provider: string;
+}
+
+interface NodeBreakdown {
+  node_name: string;
+  node_type?: string;
+  tokens: number;
+  cost: number;
+  model?: string;
+  provider?: string;
+  executions: number;
+}
+
+interface ProviderUsageSummary {
+  total_providers: number;
+  most_used_provider: string;
+  cost_leader: string;
 }
 
 interface DailyTokenUsage {
@@ -45,16 +94,73 @@ interface DailyTokenUsage {
   cost: number;
 }
 
+// Enhanced Workflow Flowchart interface
 interface WorkflowFlowchart {
   workflow_id: string;
   mermaid_diagram: string;
+  workflow_name: string;
+  node_count: number;
+  connection_count: number;
   last_updated: string;
+  generation_method: string;
 }
 
 interface WorkflowAnalyticsDashboardProps {
   workflowId: string;
   automationName: string;
   isActive: boolean;
+}
+
+// Mermaid Diagram Component
+function MermaidDiagram({ diagram }: { diagram: string }) {
+  const [svgContent, setSvgContent] = useState<string>('');
+  const [error, setError] = useState<string>('');
+
+  useEffect(() => {
+    if (!diagram) return;
+
+    // Initialize Mermaid
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      securityLevel: 'loose'
+    });
+
+    // Generate SVG from Mermaid diagram
+    const generateDiagram = async () => {
+      try {
+        const { svg } = await mermaid.render('mermaid-diagram', diagram);
+        setSvgContent(svg);
+        setError('');
+      } catch (err) {
+        console.error('Mermaid rendering error:', err);
+        setError('Failed to render diagram');
+        setSvgContent('');
+      }
+    };
+
+    generateDiagram();
+  }, [diagram]);
+
+  if (error) {
+    return (
+      <div className="text-red-500 text-sm">
+        {error}
+        <pre className="mt-2 text-xs text-gray-600">{diagram}</pre>
+      </div>
+    );
+  }
+
+  if (!svgContent) {
+    return <div className="text-gray-500">Rendering diagram...</div>;
+  }
+
+  return (
+    <div 
+      className="mermaid-container"
+      dangerouslySetInnerHTML={{ __html: svgContent }}
+    />
+  );
 }
 
 export default function WorkflowAnalyticsDashboard({ 
@@ -95,34 +201,21 @@ export default function WorkflowAnalyticsDashboard({
     }
   };
 
-  // Fetch AI token usage (placeholder for future API)
+  // Fetch AI token usage using enhanced API
   const fetchAITokenUsage = async () => {
     setLoading(prev => ({ ...prev, aiTokens: true }));
     try {
-      // TODO: Replace with actual API call when implemented
-      // const { data, error } = await apiClient.functions.getAITokenUsage({
-      //   workflow_id: workflowId
-      // });
-      
-      // Mock data for now
-      const mockData: AITokenUsage = {
-        workflow_id: workflowId,
-        total_tokens_used: 15420,
-        total_cost: 0.023,
-        daily_token_usage: [
-          { date: '2025-01-15', tokens_used: 2100, cost: 0.003 },
-          { date: '2025-01-16', tokens_used: 1800, cost: 0.0027 },
-          { date: '2025-01-17', tokens_used: 2400, cost: 0.0036 },
-          { date: '2025-01-18', tokens_used: 1900, cost: 0.0029 },
-          { date: '2025-01-19', tokens_used: 2200, cost: 0.0033 },
-          { date: '2025-01-20', tokens_used: 2100, cost: 0.003 },
-          { date: '2025-01-21', tokens_used: 2920, cost: 0.0044 }
-        ],
-        period_start: '2025-01-15',
-        period_end: '2025-01-21'
-      };
-      
-      setAiTokenUsage(mockData);
+      const { data, error } = await apiClient.functions.getAITokenUsage({
+        workflow_id: workflowId
+      });
+
+      if (error) {
+        console.error('❌ AI token usage error:', error);
+        toast.error('Failed to load AI token usage: ' + error.message);
+      } else {
+        console.log('✅ Enhanced AI token usage loaded:', data);
+        setAiTokenUsage(data);
+      }
     } catch (err: any) {
       console.error('❌ AI token usage fetch error:', err);
       toast.error('Failed to load AI token usage: ' + err.message);
@@ -131,34 +224,22 @@ export default function WorkflowAnalyticsDashboard({
     }
   };
 
-  // Fetch workflow flowchart (placeholder for future API)
+  // Fetch workflow flowchart using enhanced API
   const fetchWorkflowFlowchart = async () => {
     setLoading(prev => ({ ...prev, flowchart: true }));
     try {
-      // TODO: Replace with actual API call when implemented
-      // const { data, error } = await apiClient.functions.getWorkflowFlowchart({
-      //   workflow_id: workflowId
-      // });
-      
-      // Mock data for now
-      const mockData: WorkflowFlowchart = {
+      const { data, error } = await apiClient.functions.getWorkflowFlowchart({
         workflow_id: workflowId,
-        mermaid_diagram: `graph TD
-    A[Start] --> B[Webhook Trigger]
-    B --> C{Check Data}
-    C -->|Valid| D[Process Data]
-    C -->|Invalid| E[Send Error Email]
-    D --> F[Call AI API]
-    F --> G[Generate Response]
-    G --> H[Send Response]
-    H --> I[Log Results]
-    I --> J[End]
-    E --> K[Log Error]
-    K --> J`,
-        last_updated: '2025-01-21T10:30:00Z'
-      };
-      
-      setWorkflowFlowchart(mockData);
+        include_execution_data: false
+      });
+
+      if (error) {
+        console.error('❌ Workflow flowchart error:', error);
+        toast.error('Failed to load workflow flowchart: ' + error.message);
+      } else {
+        console.log('✅ Enhanced workflow flowchart loaded:', data);
+        setWorkflowFlowchart(data);
+      }
     } catch (err: any) {
       console.error('❌ Workflow flowchart fetch error:', err);
       toast.error('Failed to load workflow flowchart: ' + err.message);
@@ -249,19 +330,53 @@ export default function WorkflowAnalyticsDashboard({
     );
   };
 
-  // Render AI token usage chart
+  // Render enhanced AI token usage dashboard
   const renderAITokenChart = () => {
     if (!aiTokenUsage) return null;
 
     return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-6">
+        {/* Token Estimation Disclaimer */}
+        {aiTokenUsage.token_confidence && aiTokenUsage.token_confidence !== 'exact' && (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="p-4">
+              <div className="flex items-start space-x-2">
+                <div className="text-amber-600">⚠️</div>
+                <div className="text-sm">
+                  <p className="font-medium text-amber-800">Estimated Token Usage</p>
+                  <p className="text-amber-700">
+                    Token data is {aiTokenUsage.token_confidence} - calculated from response content. 
+                    Actual usage may vary. Consider this data for trend analysis rather than exact billing.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Enhanced Summary Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-purple-600">
-                {aiTokenUsage.total_tokens_used.toLocaleString()}
+              <div className="flex items-center justify-between">
+                <div className="text-2xl font-bold text-purple-600">
+                  {aiTokenUsage.total_tokens_used.toLocaleString()}
+                </div>
+                {aiTokenUsage.token_confidence && (
+                  <Badge 
+                    variant={aiTokenUsage.token_confidence === 'exact' ? 'default' : 'secondary'}
+                    className="text-xs"
+                  >
+                    {aiTokenUsage.token_confidence.toUpperCase()}
+                  </Badge>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground">Total Tokens Used</p>
+              <p className="text-xs text-muted-foreground">
+                Total Tokens
+                {aiTokenUsage.estimation_method && (
+                  <span className="ml-1">({aiTokenUsage.estimation_method})</span>
+                )}
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -272,7 +387,131 @@ export default function WorkflowAnalyticsDashboard({
               <p className="text-xs text-muted-foreground">Total Cost</p>
             </CardContent>
           </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold text-blue-600">
+                {aiTokenUsage.provider_usage_summary?.total_providers || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">AI Providers</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold text-orange-600">
+                {aiTokenUsage.total_executions_analyzed || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">Executions</p>
+            </CardContent>
+          </Card>
         </div>
+
+        {/* Provider Breakdown */}
+        {aiTokenUsage.provider_breakdown && Object.keys(aiTokenUsage.provider_breakdown).length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Usage by AI Provider</CardTitle>
+              <CardDescription>
+                Most used: {aiTokenUsage.provider_usage_summary?.most_used_provider?.toUpperCase() || 'N/A'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {Object.entries(aiTokenUsage.provider_breakdown).map(([provider, stats]) => (
+                  <div key={provider} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <Badge variant="outline" className="capitalize">
+                        {provider}
+                      </Badge>
+                      <div className="text-sm">
+                        <div className="font-medium">{stats.tokens.toLocaleString()} tokens</div>
+                        <div className="text-muted-foreground">{stats.executions} executions</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-green-600">${stats.cost.toFixed(4)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Model Breakdown */}
+        {aiTokenUsage.model_breakdown && Object.keys(aiTokenUsage.model_breakdown).length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Usage by Model</CardTitle>
+              <CardDescription>
+                Discovered models: {aiTokenUsage.discovered_models?.join(', ') || 'None'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {Object.entries(aiTokenUsage.model_breakdown).map(([model, stats]) => (
+                  <div key={model} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="text-sm">
+                        <div className="font-medium">{model}</div>
+                        <div className="text-muted-foreground">
+                          <Badge variant="secondary" className="text-xs capitalize">
+                            {stats.provider}
+                          </Badge>
+                          {' '}{stats.executions} executions
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">{stats.tokens.toLocaleString()}</div>
+                      <div className="text-sm text-green-600">${stats.cost.toFixed(4)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Node-Level Breakdown */}
+        {aiTokenUsage.node_breakdown && aiTokenUsage.node_breakdown.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Node-Level Usage</CardTitle>
+              <CardDescription>
+                Token consumption by workflow nodes
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {aiTokenUsage.node_breakdown.map((node, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="text-sm">
+                        <div className="font-medium">{node.node_name}</div>
+                        <div className="text-muted-foreground">
+                          {node.model && (
+                            <Badge variant="outline" className="text-xs mr-1">
+                              {node.model}
+                            </Badge>
+                          )}
+                          {node.provider && (
+                            <Badge variant="secondary" className="text-xs capitalize">
+                              {node.provider}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">{node.tokens.toLocaleString()}</div>
+                      <div className="text-sm text-green-600">${node.cost.toFixed(4)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
         
         <Card>
           <CardHeader>
@@ -315,38 +554,70 @@ export default function WorkflowAnalyticsDashboard({
     );
   };
 
-  // Render workflow flowchart
+  // Render enhanced workflow flowchart
   const renderWorkflowFlowchart = () => {
     if (!workflowFlowchart) return null;
 
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Workflow Flow Diagram</CardTitle>
-          <CardDescription>
-            Visual representation of your workflow logic
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <pre className="text-sm font-mono whitespace-pre-wrap">
-              {workflowFlowchart.mermaid_diagram}
-            </pre>
-          </div>
-          <div className="mt-4 text-xs text-muted-foreground">
-            Last updated: {new Date(workflowFlowchart.last_updated).toLocaleString()}
-          </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="mt-2"
-            onClick={fetchWorkflowFlowchart}
-            disabled={loading.flowchart}
-          >
-            {loading.flowchart ? 'Refreshing...' : 'Refresh Diagram'}
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        {/* Workflow Metadata */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold text-blue-600">
+                {workflowFlowchart.node_count || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">Nodes</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold text-green-600">
+                {workflowFlowchart.connection_count || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">Connections</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-sm font-medium text-purple-600">
+                {workflowFlowchart.generation_method === 'llm_analysis' ? 'AI Generated' : 'Template'}
+              </div>
+              <p className="text-xs text-muted-foreground">Generation Method</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Workflow Diagram */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              {workflowFlowchart.workflow_name || 'Workflow Flow Diagram'}
+            </CardTitle>
+            <CardDescription>
+              Visual representation of your workflow logic
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <MermaidDiagram diagram={workflowFlowchart.mermaid_diagram} />
+            </div>
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-xs text-muted-foreground">
+                Last updated: {new Date(workflowFlowchart.last_updated).toLocaleString()}
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={fetchWorkflowFlowchart}
+                disabled={loading.flowchart}
+              >
+                {loading.flowchart ? 'Refreshing...' : 'Refresh Diagram'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     );
   };
 
@@ -368,9 +639,30 @@ export default function WorkflowAnalyticsDashboard({
       <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="ai-tokens">AI Tokens</TabsTrigger>
-            <TabsTrigger value="flowchart">Flow Diagram</TabsTrigger>
+            <TabsTrigger value="overview">
+              Overview
+              {executionAnalytics && (
+                <Badge variant="secondary" className="ml-2 text-xs">
+                  {executionAnalytics.overall_success_percentage.toFixed(0)}%
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="ai-tokens">
+              AI Tokens
+              {aiTokenUsage && (
+                <Badge variant="secondary" className="ml-2 text-xs">
+                  ${aiTokenUsage.total_cost.toFixed(3)}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="flowchart">
+              Flow Diagram
+              {workflowFlowchart && (
+                <Badge variant="secondary" className="ml-2 text-xs">
+                  {workflowFlowchart.node_count} nodes
+                </Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="overview" className="mt-6">

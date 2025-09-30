@@ -29,4 +29,13 @@ dist-ssr
 
 stencil-flow-app/django_api/.env
 
+# Django specific
+django_api/*.log
+django_api/__pycache__/
+django_api/**/__pycache__/
+django_api/api/__pycache__/
+django_api/api/**/__pycache__/
+django_api/stencil_flow_api/__pycache__/
+django_api/tests/__pycache__/
+
 terraform/*

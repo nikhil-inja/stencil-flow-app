@@ -70,20 +70,16 @@ export default function SpacesPage() {
         return;
       }
 
-      // Make direct API call to Django backend
-      const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/spaces/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionData.session.access_token}`,
-        },
+      // Make API call using centralized client
+      let spacesData: any, error: any;
+      await apiClient.from('spaces').select().then((resolve) => {
+        spacesData = resolve.data;
+        error = resolve.error;
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch spaces');
+      if (error) {
+        throw new Error(error?.message || 'Failed to fetch spaces');
       }
-
-      const spacesData = await response.json();
       console.log('📦 Raw spaces response:', spacesData);
       
       // Handle Django REST Framework pagination
@@ -120,26 +116,16 @@ export default function SpacesPage() {
         // workspace is automatically set by the backend from the authenticated user
       };
 
-      // Make direct API call to Django backend
-      const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/spaces/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionData.session.access_token}`,
-        },
-        body: JSON.stringify(spaceData),
-      });
+      // Make API call using centralized client
+      const { data: newSpace, error } = await apiClient.from('spaces').insert(spaceData).select().single();
 
-      if (!response.ok) {
-        const errorData = await response.json();
+      if (error) {
         // Handle validation errors (like duplicate names)
-        if (errorData.name) {
-          throw new Error(errorData.name[0] || errorData.name);
+        if (error.message.includes('name')) {
+          throw new Error(error.message);
         }
-        throw new Error(errorData.detail || errorData.error || 'Failed to create space');
+        throw new Error(error.message || 'Failed to create space');
       }
-
-      const newSpace = await response.json();
       
       // Add the new space to the beginning of the list
       setSpaces([newSpace, ...spaces]);
@@ -170,16 +156,14 @@ export default function SpacesPage() {
           return;
         }
 
-        // Make direct API call to Django backend
-        const response = await fetch(`${import.meta.env.VITE_SERVER_URL || 'http://localhost:8000'}/api/spaces/${spaceId}/`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${sessionData.session.access_token}`,
-          },
+        // Make API call using centralized client
+        let error: any;
+        await apiClient.from('spaces').delete().eq('id', spaceId).then((resolve) => {
+          error = resolve.error;
         });
 
-        if (!response.ok) {
-          throw new Error('Failed to delete space');
+        if (error) {
+          throw new Error(error?.message || 'Failed to delete space');
         }
 
         // Remove space from local state
